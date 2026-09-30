@@ -1,56 +1,51 @@
-# Welcome to your Expo app 👋
+# Inspo Canvas
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Save inspirations from anywhere and find them again on a spatial canvas. One Expo codebase for iOS, Android and web.
 
-## Get started
+## Stack
 
-1. Install dependencies
+- Expo SDK 57 (React Native 0.86), TypeScript, Expo Router, React Native Web
+- react-native-gesture-handler + react-native-reanimated 4 for the canvas and the lens
+- react-native-svg for the dot grid, lens rim and icons (no Skia)
+- expo-image, expo-video, expo-audio
+- Supabase: Auth, Postgres (`supabase/migrations`), Storage (private `media` bucket), and the `link-preview` Edge Function
+- Vercel for the web build (`vercel.json`)
 
-   ```bash
-   npm install
-   ```
+Install native packages with `npx expo install <pkg>` so versions match the SDK.
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Run
 
 ```bash
-npm run reset-project
+npm install
+npx expo start          # press w for web, or open in a development build
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+With no Supabase keys the app shows a demo canvas (placeholder images and sample videos).
 
-### Other setup steps
+Expo Go works for now. A development build (`npx expo run:ios|android` or `eas build --profile development`) becomes necessary once the native share extension for capturing from other apps is added.
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+## Supabase
 
-## Learn more
+1. Create a project, then copy `.env.example` to `.env.local` and fill in the URL and publishable key.
+2. Apply the schema: `npx supabase link --project-ref <ref>` then `npx supabase db push`.
+3. Deploy link previews: `npx supabase functions deploy link-preview`.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Deploy the web build
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Import the repo in Vercel. `vercel.json` sets the build (`expo export -p web`) and output (`dist`). Add the two `EXPO_PUBLIC_…` variables in the Vercel project settings.
 
-## Join the community
+## Where things are
 
-Join our community of developers creating universal apps.
+| Path | What |
+|---|---|
+| `src/app/index.tsx` | Canvas screen: title, filter chips, canvas, capture dock |
+| `src/app/item/[id].tsx` | Detail view |
+| `src/features/canvas/layout.ts` | Staggered masonry layout and hit-testing |
+| `src/features/canvas/canvas.tsx` | Pan, pinch, wheel, tap, and hold / hover to open the lens |
+| `src/features/lens/` | Magnifier lens and its glass rim |
+| `src/data/` | Items store (Supabase or demo data) |
+| `src/theme/tokens.ts` | Colours, radii, shadows, lens and canvas constants |
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Lens
+
+Hold a tile for 1s on mobile, or rest the pointer for 600ms (or click and hold) on web. The lens is a 176px circular clipped view that re-renders the nearby tiles at 2.6× (sharp, not a scaled bitmap) and follows the finger. The tile under the centre autoplays muted if it is a video. The red/blue fringe is approximated with two offset tinted rings; true per-pixel chromatic aberration would need Skia.

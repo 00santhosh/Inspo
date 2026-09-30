@@ -1,98 +1,47 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useMemo, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { CaptureDock } from '@/components/capture-dock';
+import { FilterChips, type Filter } from '@/components/filter-chips';
+import { useItems } from '@/data/items';
+import { Canvas } from '@/features/canvas/canvas';
+import { colors, fonts } from '@/theme/tokens';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+export default function CanvasScreen() {
+  const insets = useSafeAreaInsets();
+  const { items, source } = useItems();
+  const [filter, setFilter] = useState<Filter>('all');
+  const visible = useMemo(() => (filter === 'all' ? items : items.filter((i) => i.kind === filter)), [items, filter]);
+
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+    <View style={styles.screen}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <View style={styles.titleRow}>
+          <Text style={styles.title} accessibilityRole="header">
+            Canvas
+          </Text>
+          {source === 'demo' && <Text style={styles.demo}>Demo content</Text>}
+        </View>
+        <FilterChips value={filter} onChange={setFilter} />
+      </View>
 
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+      <Canvas items={visible} />
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+      <View pointerEvents="box-none" style={[styles.dockWrap, { bottom: insets.bottom + 16 }]}>
+        {/* Capture flows are the next milestone; the dock is visual only for now. */}
+        <CaptureDock />
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
+  screen: { flex: 1, backgroundColor: colors.canvas },
+  header: { gap: 12, paddingBottom: 12, backgroundColor: colors.canvas, zIndex: 1 },
+  titleRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 16 },
+  title: { fontFamily: fonts.sans, fontSize: 34, fontWeight: '800', letterSpacing: -0.8, color: colors.text },
+  demo: { fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary },
+  // The canvas sits at zIndex 2 so its lens can overlap the header; the dock stays on top.
+  dockWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 3 },
 });
