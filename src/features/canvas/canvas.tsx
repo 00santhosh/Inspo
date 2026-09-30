@@ -45,7 +45,8 @@ function clampScale(s: number) {
 
 type LensMode = 'hold' | 'hover';
 
-export function Canvas({ items }: { items: Item[] }) {
+/** Increment resetSignal to animate back to the default view. */
+export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?: number }) {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const layout = useMemo(
     () => (size.width ? layoutCanvas(items, size.width, size.height) : null),
@@ -78,6 +79,16 @@ export function Canvas({ items }: { items: Item[] }) {
     ty.set(clampTo(0, 1, size.height, layout.height));
     scale.set(1);
   }, [layout, size.width, size.height, tx, ty, scale]);
+
+  useEffect(() => {
+    if (!layout || resetSignal === 0) return;
+    const ease = { duration: 320 };
+    scale.set(withTiming(1, ease));
+    tx.set(withTiming(clampTo(0, 1, size.width, layout.width), ease));
+    ty.set(withTiming(clampTo(0, 1, size.height, layout.height), ease));
+    // Only on an explicit reset, not when the layout changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal]);
 
   const handlers = useMemo(() => {
     const tiles: TileRect[] = layout?.tiles ?? [];

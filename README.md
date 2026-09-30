@@ -38,13 +38,15 @@ Import the repo in Vercel. `vercel.json` sets the build (`expo export -p web`) a
 
 | Path | What |
 |---|---|
-| `src/app/index.tsx` | Canvas screen: title, filter chips, canvas, capture dock |
+| `src/app/index.tsx` | Canvas screen: sky header, filter tabs, canvas, capture dock |
 | `src/app/item/[id].tsx` | Detail view |
 | `src/features/canvas/layout.ts` | Staggered masonry layout and hit-testing |
 | `src/features/canvas/canvas.tsx` | Pan, pinch, wheel, tap, and hold / hover to open the lens |
 | `src/features/lens/` | Magnifier lens and its glass rim |
 | `src/data/` | Items store (Supabase or demo data) |
+| `src/components/` | Glass buttons and pills, sky gradient, icons, filter tabs, capture dock |
 | `src/theme/tokens.ts` | Colours, radii, shadows, lens and canvas constants |
+| `design/` | Visual references (`ui-style-reference.png` sets the colours, glass buttons and shadows) |
 
 ## Lens
 

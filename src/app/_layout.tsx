@@ -11,7 +11,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ItemsProvider>
-          <StatusBar style="dark" />
+          <StatusBar style="light" />
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.canvas } }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="item/[id]" options={{ presentation: 'modal', animation: 'fade_from_bottom' }} />

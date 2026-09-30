@@ -1,97 +1,129 @@
 import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
-import type { ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
-import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import { useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
+import { AccentButton, GlassIconButton } from '@/components/glass';
+import { Icon, type IconName } from '@/components/icons';
 import type { ItemKind } from '@/lib/types';
-import { colors, radius, shadow } from '@/theme/tokens';
+import { backdrop, colors, fonts, radius, shadow } from '@/theme/tokens';
 
-const stroke = { stroke: colors.text, strokeWidth: 1.7, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
-
-const ICONS: Record<ItemKind, ReactNode> = {
-  image: (
-    <>
-      <Rect x={3} y={4} width={18} height={16} rx={3} {...stroke} />
-      <Circle cx={9} cy={10} r={1.6} {...stroke} />
-      <Path d="M4 18l5-5 4 4 3-3 4 4" {...stroke} />
-    </>
-  ),
-  video: (
-    <>
-      <Rect x={3} y={5} width={18} height={14} rx={3} {...stroke} />
-      <Path d="M10 9.5v5l4.2-2.5z" {...stroke} />
-    </>
-  ),
-  link: (
-    <>
-      <Path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" {...stroke} />
-      <Path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" {...stroke} />
-    </>
-  ),
-  note: (
-    <>
-      <Rect x={4} y={3} width={16} height={18} rx={3} {...stroke} />
-      <Path d="M8 8h8M8 12h8M8 16h5" {...stroke} />
-    </>
-  ),
-  voice: (
-    <>
-      <Rect x={9} y={3} width={6} height={11} rx={3} {...stroke} />
-      <Path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" {...stroke} />
-    </>
-  ),
-};
-
-const ORDER: { kind: ItemKind; label: string }[] = [
-  { kind: 'image', label: 'Add image' },
-  { kind: 'video', label: 'Add video' },
-  { kind: 'link', label: 'Add link' },
-  { kind: 'note', label: 'Add note' },
-  { kind: 'voice', label: 'Record voice note' },
+const FORMATS: { kind: ItemKind; icon: IconName; label: string }[] = [
+  { kind: 'image', icon: 'image', label: 'Image' },
+  { kind: 'video', icon: 'video', label: 'Video' },
+  { kind: 'link', icon: 'link', label: 'Link' },
+  { kind: 'note', icon: 'note', label: 'Note' },
+  { kind: 'voice', icon: 'voice', label: 'Voice' },
 ];
 
 const hasLiquidGlass = Platform.OS === 'ios' && isGlassEffectAPIAvailable();
 
-/** Floating capture dock. Liquid Glass on iOS 26+, a frosted translucent pill elsewhere. */
-export function CaptureDock({ onCapture }: { onCapture?: (kind: ItemKind) => void }) {
-  const buttons = ORDER.map(({ kind, label }) => (
-    <Pressable
-      key={kind}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={() => onCapture?.(kind)}
-      style={({ pressed }) => [styles.button, pressed && { opacity: 0.55 }]}>
-      <Svg width={24} height={24} viewBox="0 0 24 24">
-        {ICONS[kind]}
-      </Svg>
-    </Pressable>
-  ));
+type Props = {
+  onCapture?: (kind: ItemKind) => void;
+  onResetView?: () => void;
+  onSearch?: () => void;
+};
 
-  return hasLiquidGlass ? (
-    <GlassView glassEffectStyle="regular" isInteractive style={[styles.dock, styles.glassShadow]}>
-      {buttons}
-    </GlassView>
-  ) : (
-    <View style={[styles.dock, styles.fallback]}>{buttons}</View>
+/**
+ * Floating bottom bar in the reference's style: frosted dark glass with the blue "+"
+ * in the middle. "+" opens a tray with the five capture formats.
+ */
+export function CaptureDock({ onCapture, onResetView, onSearch }: Props) {
+  const [open, setOpen] = useState(false);
+  const progress = useSharedValue(0);
+
+  const toggle = (next = !open) => {
+    setOpen(next);
+    progress.set(withSpring(next ? 1 : 0, { damping: 16, stiffness: 240, mass: 0.7 }));
+  };
+
+  const tray = useAnimatedStyle(() => ({
+    opacity: progress.get(),
+    transform: [{ translateY: (1 - progress.get()) * 16 }, { scale: 0.94 + 0.06 * progress.get() }],
+  }));
+  const plus = useAnimatedStyle(() => ({ transform: [{ rotate: `${progress.get() * 45}deg` }] }));
+
+  const bar = (
+    <>
+      <GlassIconButton icon="grid" label="Reset canvas view" onPress={onResetView} tone="plain" />
+      <Animated.View style={plus}>
+        <AccentButton icon="plus" label={open ? 'Close capture options' : 'Capture'} onPress={() => toggle()} />
+      </Animated.View>
+      <GlassIconButton icon="search" label="Search" onPress={onSearch} tone="plain" />
+    </>
+  );
+
+  return (
+    <View style={styles.wrap}>
+      <Animated.View style={[styles.tray, tray, { pointerEvents: open ? 'auto' : 'none' }]} aria-hidden={!open}>
+        {FORMATS.map((f) => (
+          <Pressable
+            key={f.kind}
+            accessibilityRole="button"
+            accessibilityLabel={`Add ${f.label.toLowerCase()}`}
+            onPress={() => {
+              toggle(false);
+              onCapture?.(f.kind);
+            }}
+            style={({ pressed }) => [styles.option, pressed && { opacity: 0.6 }]}>
+            <View style={styles.optionIcon}>
+              <Icon name={f.icon} size={22} />
+            </View>
+            <Text style={styles.optionLabel}>{f.label}</Text>
+          </Pressable>
+        ))}
+      </Animated.View>
+
+      {hasLiquidGlass ? (
+        <GlassView glassEffectStyle="regular" colorScheme="dark" isInteractive style={[styles.bar, styles.barShadow]}>
+          {bar}
+        </GlassView>
+      ) : (
+        <View style={[styles.bar, styles.barFallback]}>{bar}</View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  dock: {
+  wrap: { alignItems: 'center', gap: 12 },
+  bar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    height: 60,
-    borderRadius: radius.dock,
+    gap: 22,
+    paddingHorizontal: 14,
+    height: 72,
+    borderRadius: radius.pill,
   },
-  glassShadow: { boxShadow: shadow.dock },
-  fallback: {
-    backgroundColor: 'rgba(255, 255, 255, 0.78)',
+  barShadow: { boxShadow: shadow.dock },
+  barFallback: {
+    backgroundColor: colors.dock,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
+    borderColor: colors.glassBorder,
     boxShadow: shadow.dock,
-    ...(Platform.OS === 'web' ? ({ backdropFilter: 'blur(20px) saturate(180%)' } as object) : null),
+    ...backdrop(22),
   },
-  button: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  tray: {
+    flexDirection: 'row',
+    gap: 6,
+    padding: 8,
+    borderRadius: 26,
+    backgroundColor: colors.dock,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.glassBorder,
+    boxShadow: shadow.dock,
+    ...backdrop(22),
+  },
+  option: { width: 58, alignItems: 'center', gap: 5, paddingVertical: 4 },
+  optionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.glass,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.glassBorder,
+  },
+  optionLabel: { fontFamily: fonts.sans, fontSize: 11.5, fontWeight: '500', color: colors.textSecondary },
 });

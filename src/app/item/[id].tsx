@@ -7,10 +7,11 @@ import { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { GlassIconButton } from '@/components/glass';
 import { useItem } from '@/data/items';
 import { formatDuration } from '@/features/canvas/tile';
 import type { Item } from '@/lib/types';
-import { colors, fonts, radius } from '@/theme/tokens';
+import { colors, fonts, radius, shadow } from '@/theme/tokens';
 
 export default function ItemDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -22,9 +23,7 @@ export default function ItemDetail() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}>
       <View style={styles.bar}>
-        <Pressable onPress={close} accessibilityRole="button" accessibilityLabel="Close" style={styles.close}>
-          <Text style={styles.closeText}>Close</Text>
-        </Pressable>
+        <GlassIconButton icon="back" label="Back to canvas" onPress={close} />
       </View>
       {item ? <Body item={item} /> : <Text style={styles.missing}>This item isn’t on your canvas any more.</Text>}
     </View>
@@ -61,8 +60,8 @@ function Body({ item }: { item: Item }) {
       );
     case 'note':
       return (
-        <ScrollView contentContainerStyle={[styles.card, { backgroundColor: colors.noteYellow }]}>
-          <Text style={[styles.body, { fontSize: 20, lineHeight: 28 }]}>{item.body}</Text>
+        <ScrollView contentContainerStyle={styles.card}>
+          <Text style={[styles.body, { fontSize: 20, lineHeight: 28, color: colors.noteText }]}>{item.body}</Text>
         </ScrollView>
       );
     case 'voice':
@@ -83,7 +82,7 @@ function DetailVoice({ item }: { item: Item }) {
   const player = useAudioPlayer(item.mediaUrl ?? null);
   const status = useAudioPlayerStatus(player);
   return (
-    <View style={[styles.card, { backgroundColor: colors.voice }]}>
+    <View style={styles.card}>
       <Text style={styles.heading}>{item.title ?? 'Voice note'}</Text>
       <Text style={styles.body}>{formatDuration(item.durationMs)}</Text>
       {item.mediaUrl ? (
@@ -100,12 +99,18 @@ function DetailVoice({ item }: { item: Item }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas, paddingHorizontal: 16, gap: 12 },
-  bar: { flexDirection: 'row', justifyContent: 'flex-end' },
-  close: { paddingHorizontal: 14, height: 34, borderRadius: 17, backgroundColor: colors.surface, justifyContent: 'center' },
-  closeText: { fontFamily: fonts.sans, fontSize: 15, fontWeight: '600', color: colors.text },
-  media: { flex: 1, borderRadius: radius.tile },
-  card: { borderRadius: radius.tile, backgroundColor: colors.surface, padding: 20, gap: 12 },
-  linkImage: { width: '100%', aspectRatio: 1.9, borderRadius: radius.tile - 4 },
+  bar: { flexDirection: 'row', justifyContent: 'flex-start' },
+  media: { flex: 1, borderRadius: radius.card, overflow: 'hidden' },
+  card: {
+    borderRadius: radius.card,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.glassBorder,
+    boxShadow: shadow.tile,
+    padding: 20,
+    gap: 12,
+  },
+  linkImage: { width: '100%', aspectRatio: 1.9, borderRadius: radius.tile },
   heading: { fontFamily: fonts.sans, fontSize: 22, fontWeight: '700', color: colors.text },
   body: { fontFamily: fonts.sans, fontSize: 16, lineHeight: 22, color: colors.textSecondary },
   primary: {
@@ -113,9 +118,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     height: 42,
     borderRadius: 21,
-    backgroundColor: colors.chipActive,
+    backgroundColor: colors.accent,
+    boxShadow: shadow.accent,
     justifyContent: 'center',
   },
-  primaryText: { fontFamily: fonts.sans, fontSize: 15, fontWeight: '600', color: colors.chipActiveText },
+  primaryText: { fontFamily: fonts.sans, fontSize: 15, fontWeight: '600', color: colors.accentText },
   missing: { fontFamily: fonts.sans, fontSize: 16, color: colors.textSecondary, textAlign: 'center', marginTop: 40 },
 });

@@ -75,7 +75,7 @@ export const LensRim = memo(function LensRim({ size }: { size: number }) {
       {/* Glass rim: bright inner line, dark hairline so it reads on a light canvas. */}
       <Circle cx={c} cy={c} r={r - 2.2} stroke="rgba(0, 0, 0, 0.06)" strokeWidth={1} fill="none" />
       <Circle cx={c} cy={c} r={r - 1} stroke="rgba(255, 255, 255, 0.95)" strokeWidth={1.6} fill="none" />
-      <Circle cx={c} cy={c} r={r - 0.25} stroke="rgba(0, 0, 0, 0.22)" strokeWidth={0.5} fill="none" />
+      <Circle cx={c} cy={c} r={r - 0.25} stroke="rgba(0, 0, 0, 0.45)" strokeWidth={0.6} fill="none" />
 
       {STREAKS.map((s) => (
         <Path

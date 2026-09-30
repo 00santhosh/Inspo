@@ -4,7 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import type { Item } from '@/lib/types';
-import { colors, fonts, radius, shadow } from '@/theme/tokens';
+import { backdrop, colors, fonts, radius, shadow } from '@/theme/tokens';
 
 export function formatDuration(ms: number | null | undefined) {
   if (!ms) return '';
@@ -33,7 +33,7 @@ type Props = {
 export const Tile = memo(function Tile({ item, width, height, k = 1, overlay }: Props) {
   return (
     <View style={[styles.tile, { width, height, borderRadius: radius.tile * k }]}>
-      <View style={[StyleSheet.absoluteFill, { borderRadius: radius.tile * k, overflow: 'hidden' }]}>
+      <View style={[StyleSheet.absoluteFill, styles.edge, { borderRadius: radius.tile * k, overflow: 'hidden' }]}>
         <TileBody item={item} k={k} />
         {overlay}
         {item.kind === 'video' && <VideoBadge k={k} durationMs={item.durationMs} />}
@@ -73,7 +73,7 @@ function TileBody({ item, k }: { item: Item; k: number }) {
       );
     case 'note':
       return (
-        <View style={{ flex: 1, backgroundColor: colors.noteYellow, padding: 7 * k }}>
+        <View style={{ flex: 1, backgroundColor: colors.surfaceRaised, padding: 8 * k }}>
           <Text numberOfLines={7} style={[styles.note, { fontSize: 9.5 * k, lineHeight: 13 * k }]}>
             {item.body}
           </Text>
@@ -81,7 +81,7 @@ function TileBody({ item, k }: { item: Item; k: number }) {
       );
     case 'voice':
       return (
-        <View style={{ flex: 1, backgroundColor: colors.voice, padding: 7 * k, justifyContent: 'space-between' }}>
+        <View style={{ flex: 1, backgroundColor: colors.surfaceRaised, padding: 8 * k, justifyContent: 'space-between' }}>
           <Waveform seed={item.id} k={k} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
             <Text numberOfLines={1} style={[styles.linkTitle, { fontSize: 8.5 * k, flex: 1 }]}>
@@ -123,7 +123,7 @@ function Waveform({ seed, k }: { seed: string; k: number }) {
 
 function VideoBadge({ k, durationMs }: { k: number; durationMs?: number | null }) {
   return (
-    <View style={[styles.badge, { left: 5 * k, bottom: 5 * k, paddingHorizontal: 5 * k, height: 15 * k, gap: 3 * k }]}>
+    <View style={[styles.badge, { right: 5 * k, top: 5 * k, paddingHorizontal: 6 * k, height: 16 * k, gap: 3 * k }]}>
       <Svg width={6 * k} height={7 * k} viewBox="0 0 6 7">
         <Path d="M0 0.6v5.8c0 .45.5.72.88.47l4.6-2.9a.55.55 0 0 0 0-.94L.88.13C.5-.12 0 .15 0 .6z" fill="#fff" />
       </Svg>
@@ -137,15 +137,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     boxShadow: shadow.tile,
   },
+  // A faint lit edge so dark cards separate from the dark canvas.
+  edge: { borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255, 255, 255, 0.08)' },
   linkTitle: { fontFamily: fonts.sans, fontWeight: '600', color: colors.text },
   meta: { fontFamily: fonts.sans, color: colors.textSecondary },
-  note: { fontFamily: fonts.sans, color: colors.text },
+  note: { fontFamily: fonts.sans, color: colors.noteText },
   badge: {
     position: 'absolute',
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 999,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    backgroundColor: colors.glassOnMedia,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    ...backdrop(10),
   },
   badgeText: { fontFamily: fonts.sans, color: '#fff', fontWeight: '600', fontVariant: ['tabular-nums'] },
 });

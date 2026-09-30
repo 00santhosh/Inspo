@@ -1,33 +1,61 @@
 import { Platform } from 'react-native';
 
-// Values follow the written design direction. Revisit against
-// design/inspiration_canvas_hifi_v2.png once it is in the repo.
+// Palette sampled from design/ui-style-reference.png: deep navy canvas, a sky-to-hills
+// gradient header, frosted glass controls and one saturated blue for primary actions.
 export const colors = {
-  canvas: '#F7F6F3',
-  dot: '#D9D6CF',
-  surface: '#FFFFFF',
-  text: '#16161A',
-  textSecondary: '#6B6B73',
-  chip: '#FFFFFF',
-  chipActive: '#16161A',
-  chipActiveText: '#FFFFFF',
-  hairline: 'rgba(22, 22, 26, 0.08)',
-  noteYellow: '#FFF6D6',
-  voice: '#EEF1FF',
-  voiceAccent: '#5B6CFF',
+  canvas: '#090F14',
+  dot: '#1C252E',
+  surface: '#151C24',
+  surfaceRaised: '#1B2430',
+  text: '#FFFFFF',
+  textSecondary: 'rgba(255, 255, 255, 0.62)',
+  textTertiary: 'rgba(255, 255, 255, 0.42)',
+  accent: '#1D75FD',
+  accentText: '#FFFFFF',
+  /** Frosted glass on the dark canvas. */
+  glass: 'rgba(255, 255, 255, 0.12)',
+  glassBorder: 'rgba(255, 255, 255, 0.16)',
+  /** Frosted glass over the sky header. */
+  glassOnSky: 'rgba(70, 84, 100, 0.42)',
+  /** Smoked glass over photos and video, for badges. */
+  glassOnMedia: 'rgba(24, 24, 28, 0.46)',
+  dock: 'rgba(16, 22, 30, 0.78)',
+  noteText: 'rgba(255, 255, 255, 0.9)',
+  voiceAccent: '#5B9BFF',
+} as const;
+
+/** Header gradient, top to bottom: blue sky, haze, then blurred green hills. */
+export const sky = {
+  stops: [
+    { offset: 0, color: '#6F8DB0' },
+    { offset: 0.34, color: '#7796B7' },
+    { offset: 0.62, color: '#A0B2C5' },
+    { offset: 0.8, color: '#B7BFC4' },
+    { offset: 0.92, color: '#90A25D' },
+    { offset: 1, color: '#536437' },
+  ],
+  hills: '#7E924F',
 } as const;
 
 export const radius = {
-  tile: 12,
-  chip: 999,
-  dock: 28,
+  tile: 14,
+  card: 20,
+  header: 36,
+  pill: 999,
 } as const;
 
 export const shadow = {
-  tile: '0px 1px 2px rgba(20, 20, 30, 0.06), 0px 4px 12px rgba(20, 20, 30, 0.07)',
-  dock: '0px 8px 28px rgba(20, 20, 30, 0.16)',
-  lens: '0px 14px 36px rgba(10, 10, 20, 0.28), 0px 3px 8px rgba(10, 10, 20, 0.18)',
+  tile: '0px 2px 4px rgba(0, 0, 0, 0.35), 0px 8px 20px rgba(0, 0, 0, 0.4)',
+  header: '0px 14px 34px rgba(0, 0, 0, 0.5)',
+  dock: '0px 10px 30px rgba(0, 0, 0, 0.55)',
+  accent: '0px 6px 20px rgba(29, 117, 253, 0.55), 0px 2px 6px rgba(29, 117, 253, 0.4)',
+  glass: '0px 4px 14px rgba(0, 0, 0, 0.22)',
+  lens: '0px 18px 44px rgba(0, 0, 0, 0.65), 0px 4px 10px rgba(0, 0, 0, 0.45)',
 } as const;
+
+/** Frosted background blur. Web only; native falls back to the translucent fill. */
+export const backdrop = (px: number) =>
+  Platform.OS === 'web' ? ({ backdropFilter: `blur(${px}px) saturate(160%)` } as object) : null;
 
 export const fonts = Platform.select({
   ios: { sans: 'System' },
