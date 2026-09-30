@@ -37,8 +37,10 @@ export const DotGrid = memo(function DotGrid({ tx, ty, scale, width, height, id 
 
   return (
     <Animated.View
-      pointerEvents="none"
-      style={[{ position: 'absolute', left: 0, top: 0, width: w, height: h, transformOrigin: 'top left' }, style]}>
+      style={[
+        { position: 'absolute', left: 0, top: 0, width: w, height: h, transformOrigin: 'top left', pointerEvents: 'none' },
+        style,
+      ]}>
       <Svg width={w} height={h}>
         <Defs>
           <Pattern id={id} x={0} y={0} width={s0} height={s0} patternUnits="userSpaceOnUse">

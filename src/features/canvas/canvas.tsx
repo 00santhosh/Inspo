@@ -24,14 +24,11 @@ import { canvas as tokens, colors, lens as lensTokens } from '@/theme/tokens';
 const EDGE = 48;
 const LENS_R = lensTokens.diameter / 2;
 
-/** Allowed translation range for one axis; centres the world when it is smaller than the view. */
+/** Allowed translation range for one axis; pins the world to the top-left when it fits in the view. */
 function range(s: number, view: number, world: number): [number, number] {
   'worklet';
   const span = world * s;
-  if (span + EDGE * 2 <= view) {
-    const c = (view - span) / 2;
-    return [c, c];
-  }
+  if (span + EDGE <= view) return [0, 0];
   return [view - span - EDGE, EDGE];
 }
 
@@ -68,8 +65,11 @@ export function Canvas({ items }: { items: Item[] }) {
   const [session, setSession] = useState<LensSession | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const containerRef = useRef<View>(null);
-  const lensMode = useRef<LensMode | null>(null);
-  const hover = useRef({ x: 0, y: 0, ax: 0, ay: 0, timer: null as ReturnType<typeof setTimeout> | null });
+  // Plain mutable state for event handlers. Shared values rather than refs so the
+  // React Compiler knows none of it is read during render.
+  const lensMode = useSharedValue<LensMode | ''>('');
+  const hover = useSharedValue({ x: 0, y: 0, ax: 0, ay: 0 });
+  const hoverTimer = useSharedValue(0);
 
   // Start each layout (first load, filter change, resize) from the top-left.
   useEffect(() => {
@@ -94,7 +94,7 @@ export function Canvas({ items }: { items: Item[] }) {
       const top = (-ty.get() - LENS_R) / s;
       const right = (vw - tx.get() + LENS_R) / s;
       const bottom = (vh - ty.get() + LENS_R) / s;
-      lensMode.current = mode;
+      lensMode.set(mode);
       setSession({
         tiles: tiles.filter((t) => t.x + t.w >= left && t.x <= right && t.y + t.h >= top && t.y <= bottom),
         tx: tx.get(),
@@ -109,12 +109,12 @@ export function Canvas({ items }: { items: Item[] }) {
     };
 
     const clearSession = () => {
-      if (lensMode.current === null) setSession(null);
+      if (!lensMode.get()) setSession(null);
     };
 
     const closeLens = () => {
-      if (!lensMode.current) return;
-      lensMode.current = null;
+      if (!lensMode.get()) return;
+      lensMode.set('');
       lensOn.set(false);
       activeSV.set('');
       setActiveId(null);
@@ -126,17 +126,15 @@ export function Canvas({ items }: { items: Item[] }) {
     };
 
     const cancelHover = () => {
-      if (hover.current.timer) clearTimeout(hover.current.timer);
-      hover.current.timer = null;
-      if (lensMode.current === 'hover') closeLens();
+      if (hoverTimer.get()) clearTimeout(hoverTimer.get());
+      hoverTimer.set(0);
+      if (lensMode.get() === 'hover') closeLens();
     };
 
     // Web: rest the pointer on a tile for ~600ms to open the lens; it then follows the pointer.
     const trackHover = (x: number, y: number) => {
-      const h = hover.current;
-      h.x = x;
-      h.y = y;
-      if (lensMode.current === 'hover') {
+      const prev = hover.get();
+      if (lensMode.get() === 'hover') {
         fx.set(x);
         fy.set(y);
         const id = tileAt(x, y)?.id ?? null;
@@ -146,21 +144,25 @@ export function Canvas({ items }: { items: Item[] }) {
         }
         return;
       }
-      if (lensMode.current) return;
-      if (h.timer && Math.hypot(x - h.ax, y - h.ay) <= 4) return;
-      h.ax = x;
-      h.ay = y;
-      if (h.timer) clearTimeout(h.timer);
-      h.timer = setTimeout(() => {
-        h.timer = null;
-        if (lensMode.current) return;
-        const t = tileAt(h.x, h.y);
+      if (lensMode.get()) return;
+      if (hoverTimer.get() && Math.hypot(x - prev.ax, y - prev.ay) <= 4) {
+        hover.set({ ...prev, x, y });
+        return;
+      }
+      hover.set({ x, y, ax: x, ay: y });
+      if (hoverTimer.get()) clearTimeout(hoverTimer.get());
+      const timer = setTimeout(() => {
+        hoverTimer.set(0);
+        if (lensMode.get()) return;
+        const p = hover.get();
+        const t = tileAt(p.x, p.y);
         if (!t) return;
-        fx.set(h.x);
-        fy.set(h.y);
+        fx.set(p.x);
+        fy.set(p.y);
         lensOn.set(true);
         openLens('hover', t.id);
       }, lensTokens.hoverMs);
+      hoverTimer.set(timer as unknown as number);
     };
 
     const openDetail = (x: number, y: number) => {
@@ -169,7 +171,7 @@ export function Canvas({ items }: { items: Item[] }) {
     };
 
     const onWheel = ({ x, y, dx, dy, zoom }: { x: number; y: number; dx: number; dy: number; zoom: boolean }) => {
-      if (lensMode.current === 'hold') return;
+      if (lensMode.get() === 'hold') return;
       cancelHover();
       cancelAnimation(tx);
       cancelAnimation(ty);
@@ -270,7 +272,7 @@ export function Canvas({ items }: { items: Item[] }) {
         : touch;
 
     return { gesture, onWheel };
-  }, [layout, size.width, size.height, tx, ty, scale, fx, fy, progress, lensOn, activeSV]);
+  }, [layout, size.width, size.height, tx, ty, scale, fx, fy, progress, lensOn, activeSV, lensMode, hover, hoverTimer]);
 
   useWheel(containerRef, handlers.onWheel);
 
@@ -290,7 +292,6 @@ export function Canvas({ items }: { items: Item[] }) {
           <DotGrid id="canvas-dots" tx={tx} ty={ty} scale={scale} width={size.width} height={size.height} />
           {layout && (
             <Animated.View
-              pointerEvents="none"
               style={[styles.world, { width: layout.width, height: layout.height }, world]}>
               {layout.tiles.map((t) => {
                 const item = itemsById.get(t.id);
@@ -318,6 +319,6 @@ const styles = StyleSheet.create({
     zIndex: 2,
     ...(Platform.OS === 'web' ? ({ userSelect: 'none' } as object) : null),
   },
-  clip: { ...StyleSheet.absoluteFillObject, overflow: 'hidden', backgroundColor: colors.canvas },
-  world: { position: 'absolute', left: 0, top: 0, transformOrigin: 'top left' },
+  clip: { ...StyleSheet.absoluteFill, overflow: 'hidden', backgroundColor: colors.canvas },
+  world: { position: 'absolute', left: 0, top: 0, transformOrigin: 'top left', pointerEvents: 'none' },
 });

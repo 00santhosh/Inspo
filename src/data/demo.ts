@@ -1,16 +1,22 @@
 import type { Item } from '@/lib/types';
 
 // Placeholder content used until Supabase is configured, so the canvas and lens
-// can be exercised on day one. Images come from picsum.photos, videos from
-// Google's public sample bucket.
+// can be exercised on day one. Images come from picsum.photos. Videos are 10s clips
+// of the Blender open movies from test-videos.co.uk, with the films' posters from
+// Wikimedia Commons (CC BY 3.0, Blender Foundation).
 
-const GTV = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample';
 const videos = [
-  { name: 'ForBiggerBlazes', durationMs: 15000 },
-  { name: 'ForBiggerEscapes', durationMs: 15000 },
-  { name: 'ForBiggerFun', durationMs: 60000 },
-  { name: 'ForBiggerJoyrides', durationMs: 15000 },
-  { name: 'ForBiggerMeltdowns', durationMs: 15000 },
+  {
+    title: 'Big Buck Bunny',
+    mediaUrl: 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4',
+    thumbUrl:
+      'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Big_buck_bunny_poster_big.jpg/960px-Big_buck_bunny_poster_big.jpg',
+  },
+  {
+    title: 'Sintel',
+    mediaUrl: 'https://test-videos.co.uk/vids/sintel/mp4/h264/360/Sintel_360_10s_1MB.mp4',
+    thumbUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/8f/Sintel_poster.jpg',
+  },
 ];
 
 const links = [
@@ -52,12 +58,13 @@ function build(): Item[] {
         id: `demo-video-${i}`,
         kind: 'video',
         createdAt,
-        title: v.name.replace('ForBigger', 'For bigger '),
-        mediaUrl: `${GTV}/${v.name}.mp4`,
-        thumbUrl: `${GTV}/images/${v.name}.jpg`,
-        width: 1280,
-        height: 720,
-        durationMs: v.durationMs,
+        title: v.title,
+        mediaUrl: v.mediaUrl,
+        thumbUrl: v.thumbUrl,
+        // Poster proportions; the clip itself is cropped to fill the tile.
+        width: 640,
+        height: 905,
+        durationMs: 10000,
       });
     } else if (i % 13 === 6) {
       const l = links[(i / 13) % links.length | 0];

@@ -28,7 +28,7 @@ export default function CanvasScreen() {
 
       <Canvas items={visible} />
 
-      <View pointerEvents="box-none" style={[styles.dockWrap, { bottom: insets.bottom + 16 }]}>
+      <View style={[styles.dockWrap, { bottom: insets.bottom + 16 }]}>
         {/* Capture flows are the next milestone; the dock is visual only for now. */}
         <CaptureDock />
       </View>
@@ -43,5 +43,5 @@ const styles = StyleSheet.create({
   title: { fontFamily: fonts.sans, fontSize: 34, fontWeight: '800', letterSpacing: -0.8, color: colors.text },
   demo: { fontFamily: fonts.sans, fontSize: 12, color: colors.textSecondary },
   // The canvas sits at zIndex 2 so its lens can overlap the header; the dock stays on top.
-  dockWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 3 },
+  dockWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 3, pointerEvents: 'box-none' },
 });

@@ -94,15 +94,22 @@ function TileBody({ item, k }: { item: Item; k: number }) {
   }
 }
 
-function Waveform({ seed, k }: { seed: string; k: number }) {
-  const bars = 14;
+/** Stable pseudo-random bar heights (0.25–1) for a placeholder waveform. */
+function barHeights(seed: string, count: number): number[] {
   let h = 7;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) {
+    h = (h * 1103515245 + 12345) >>> 0;
+    out.push(0.25 + ((h >>> 16) % 100) / 133);
+  }
+  return out;
+}
+
+function Waveform({ seed, k }: { seed: string; k: number }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 * k, height: 22 * k }}>
-      {Array.from({ length: bars }, (_, i) => {
-        h = (h * 1103515245 + 12345) >>> 0;
-        const v = 0.25 + ((h >>> 16) % 100) / 133;
+      {barHeights(seed, 14).map((v, i) => {
         return (
           <View
             key={i}

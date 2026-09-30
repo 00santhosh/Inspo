@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as WebBrowser from 'expo-web-browser';
+import { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -70,7 +71,11 @@ function Body({ item }: { item: Item }) {
 }
 
 function DetailVideo({ uri }: { uri: string }) {
-  const player = useVideoPlayer(uri, (p) => p.play());
+  const player = useVideoPlayer(uri);
+  // After VideoView has attached; on web, play() only affects mounted <video> elements.
+  useEffect(() => {
+    player.play();
+  }, [player]);
   return <VideoView player={player} style={styles.media} contentFit="contain" nativeControls />;
 }
 

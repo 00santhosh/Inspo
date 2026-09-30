@@ -1,5 +1,5 @@
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedStyle, useDerivedValue, type SharedValue } from 'react-native-reanimated';
 
@@ -58,7 +58,7 @@ export function Lens({ session, itemsById, activeId, fx, fy, progress }: Props) 
   }));
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.frame, frame]}>
+    <Animated.View style={[styles.frame, frame]}>
       <View style={styles.shadow} />
       <View style={styles.clip}>
         <DotGrid id="lens-dots" tx={cx} ty={cy} scale={zv} width={D} height={D} />
@@ -90,21 +90,24 @@ const LensVideo = memo(function LensVideo({ uri }: { uri: string }) {
   const player = useVideoPlayer(uri, (p) => {
     p.muted = true;
     p.loop = true;
-    p.play();
   });
+  // Start after VideoView has attached: on web, play() only affects mounted <video> elements.
+  useEffect(() => {
+    player.play();
+  }, [player]);
   return <VideoView player={player} style={StyleSheet.absoluteFill} contentFit="cover" nativeControls={false} />;
 });
 
 const styles = StyleSheet.create({
-  frame: { position: 'absolute', left: 0, top: 0, width: D, height: D },
+  frame: { position: 'absolute', left: 0, top: 0, width: D, height: D, pointerEvents: 'none' },
   shadow: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: R,
     backgroundColor: colors.canvas,
     boxShadow: shadow.lens,
   },
   clip: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: R,
     overflow: 'hidden',
     backgroundColor: colors.canvas,

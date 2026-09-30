@@ -34,7 +34,7 @@ export const LensRim = memo(function LensRim({ size }: { size: number }) {
   const r = c;
 
   return (
-    <Svg width={size} height={size} style={{ position: 'absolute', left: 0, top: 0 }} pointerEvents="none">
+    <Svg width={size} height={size} style={{ position: 'absolute', left: 0, top: 0 }}>
       <Defs>
         <RadialGradient id="lens-glow" cx={c} cy={c} r={r} gradientUnits="userSpaceOnUse">
           <Stop offset="0.72" stopColor="#FFFFFF" stopOpacity={0} />
