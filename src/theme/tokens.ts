@@ -75,9 +75,19 @@ export const canvas = {
   maxScale: 3,
 } as const;
 
-export const lens = {
-  diameter: 176,
-  magnification: 2.6,
+/** The magnified bubble that rises above the finger on hold. */
+export const inflate = {
+  width: 236,
+  height: 280,
+  radius: 28,
+  /** Space between the fingertip and the bubble's tail, so the finger never covers it. */
+  fingerGap: 30,
+  tail: 18,
+  /** The held tile fills about this share of the bubble; the rest shows its surroundings. */
+  fill: 0.76,
+  /** Zoom limits, relative to the canvas's current scale. */
+  minZoom: 1.4,
+  maxZoom: 3,
   holdMs: Platform.OS === 'web' ? 600 : 1000,
   hoverMs: 600,
 } as const;

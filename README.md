@@ -41,13 +41,13 @@ Import the repo in Vercel. `vercel.json` sets the build (`expo export -p web`) a
 | `src/app/index.tsx` | Canvas screen: sky header, filter tabs, canvas, capture dock |
 | `src/app/item/[id].tsx` | Detail view |
 | `src/features/canvas/layout.ts` | Staggered masonry layout and hit-testing |
-| `src/features/canvas/canvas.tsx` | Pan, pinch, wheel, tap, and hold / hover to open the lens |
-| `src/features/lens/` | Magnifier lens and its glass rim |
+| `src/features/canvas/canvas.tsx` | Pan, pinch, wheel, tap, and hold / hover to inflate a tile |
+| `src/features/inflate/` | The magnified bubble shown above the finger |
 | `src/data/` | Items store (Supabase or demo data) |
 | `src/components/` | Glass buttons and pills, sky gradient, icons, filter tabs, capture dock |
 | `src/theme/tokens.ts` | Colours, radii, shadows, lens and canvas constants |
 | `design/` | Visual references (`ui-style-reference.png` sets the colours, glass buttons and shadows) |
 
-## Lens
+## Hold to inflate
 
-Hold a tile for 1s on mobile, or rest the pointer for 600ms (or click and hold) on web. The lens is a 176px circular clipped view that re-renders the nearby tiles at 2.6× (sharp, not a scaled bitmap) and follows the finger. The tile under the centre autoplays muted if it is a video. The red/blue fringe is approximated with two offset tinted rings; true per-pixel chromatic aberration would need Skia.
+Hold a tile for 1s on mobile, or rest the pointer for 600ms (or click and hold) on web. The tile inflates into a magnified bubble that rises from the fingertip and floats above it, so the finger never covers what you are looking at. The bubble frames the whole held item with a little of its surroundings, and a caption says what it is. Drag and the bubble follows, gliding to each tile under the finger; near the top of the screen it flips below the finger. Videos autoplay muted inside it. Tiles are re-rendered at the magnified size, so images and text stay sharp.

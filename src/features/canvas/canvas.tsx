@@ -2,7 +2,8 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, PointerType } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -17,12 +18,23 @@ import { DotGrid } from '@/features/canvas/dot-grid';
 import { hitTest, layoutCanvas, type TileRect } from '@/features/canvas/layout';
 import { Tile } from '@/features/canvas/tile';
 import { useWheel } from '@/features/canvas/use-wheel';
-import { Lens, type LensSession } from '@/features/lens/lens';
+import { BUBBLE_H, BUBBLE_W, InflateBubble, type InflateSession } from '@/features/inflate/inflate-bubble';
 import type { Item } from '@/lib/types';
-import { canvas as tokens, colors, lens as lensTokens } from '@/theme/tokens';
+import { colors, inflate, canvas as tokens } from '@/theme/tokens';
 
 const EDGE = 48;
-const LENS_R = lensTokens.diameter / 2;
+// The caption strip covers the bottom of the bubble; frame tiles in the space above it.
+const CAPTION_SPACE = 40;
+const TILE_SHIFT = CAPTION_SPACE / 2;
+const FOCUS_SPRING = { damping: 22, stiffness: 240, mass: 0.8 };
+const FOLLOW_SPRING = { damping: 26, stiffness: 420, mass: 0.6 };
+
+/** Zoom that shows the whole tile in the bubble with a margin of its surroundings. */
+function fitZoom(t: TileRect, s: number) {
+  'worklet';
+  const z = Math.min((BUBBLE_W * inflate.fill) / t.w, ((BUBBLE_H - CAPTION_SPACE) * inflate.fill) / t.h);
+  return Math.min(s * inflate.maxZoom, Math.max(s * inflate.minZoom, z));
+}
 
 /** Allowed translation range for one axis; pins the world to the top-left when it fits in the view. */
 function range(s: number, view: number, world: number): [number, number] {
@@ -62,10 +74,17 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
   const progress = useSharedValue(0);
   const lensOn = useSharedValue(false);
   const activeSV = useSharedValue('');
+  // World point at the bubble's centre and its zoom; animated as the finger moves between tiles.
+  const focusX = useSharedValue(0);
+  const focusY = useSharedValue(0);
+  const zoom = useSharedValue(1);
 
-  const [session, setSession] = useState<LensSession | null>(null);
+  const [session, setSession] = useState<InflateSession | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [windowTop, setWindowTop] = useState(0);
+  const insets = useSafeAreaInsets();
   const containerRef = useRef<View>(null);
+
   // Plain mutable state for event handlers. Shared values rather than refs so the
   // React Compiler knows none of it is read during render.
   const lensMode = useSharedValue<LensMode | ''>('');
@@ -99,21 +118,54 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
 
     const tileAt = (x: number, y: number) => hitTest(tiles, (x - tx.get()) / scale.get(), (y - ty.get()) / scale.get());
 
-    const openLens = (mode: LensMode, id: string) => {
+    /** Frame the tile under (x, y) in the bubble, or follow the finger over empty space. */
+    const follow = (x: number, y: number, jump: boolean) => {
+      'worklet';
+      fx.set(x);
+      fy.set(y);
       const s = scale.get();
-      const left = (-tx.get() - LENS_R) / s;
-      const top = (-ty.get() - LENS_R) / s;
-      const right = (vw - tx.get() + LENS_R) / s;
-      const bottom = (vh - ty.get() + LENS_R) / s;
+      const wx = (x - tx.get()) / s;
+      const wy = (y - ty.get()) / s;
+      const t = hitTest(tiles, wx, wy);
+      const id = t?.id ?? '';
+      if (t && (jump || id !== activeSV.get())) {
+        const z = fitZoom(t, s);
+        const cx = t.x + t.w / 2;
+        const cy = t.y + t.h / 2 + TILE_SHIFT / z;
+        if (jump) {
+          zoom.set(z);
+          focusX.set(cx);
+          focusY.set(cy);
+        } else {
+          zoom.set(withSpring(z, FOCUS_SPRING));
+          focusX.set(withSpring(cx, FOCUS_SPRING));
+          focusY.set(withSpring(cy, FOCUS_SPRING));
+        }
+      } else if (!t) {
+        focusX.set(withSpring(wx, FOLLOW_SPRING));
+        focusY.set(withSpring(wy, FOLLOW_SPRING));
+      }
+      if (id !== activeSV.get()) {
+        activeSV.set(id);
+        // Safe from either thread: queued onto the JS thread.
+        scheduleOnRN(setActiveId, id || null);
+      }
+    };
+
+    const openLens = (mode: LensMode) => {
+      const s = scale.get();
+      // Everything the bubble could show while the finger stays on screen.
+      const mx = BUBBLE_W / s;
+      const my = BUBBLE_H / s;
+      const left = -tx.get() / s - mx;
+      const top = -ty.get() / s - my;
+      const right = (vw - tx.get()) / s + mx;
+      const bottom = (vh - ty.get()) / s + my;
       lensMode.set(mode);
       setSession({
         tiles: tiles.filter((t) => t.x + t.w >= left && t.x <= right && t.y + t.h >= top && t.y <= bottom),
-        tx: tx.get(),
-        ty: ty.get(),
-        scale: s,
+        renderScale: s * inflate.maxZoom,
       });
-      setActiveId(id);
-      activeSV.set(id);
       progress.set(0);
       progress.set(withSpring(1, { damping: 18, stiffness: 280, mass: 0.7 }));
       if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -130,7 +182,7 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
       activeSV.set('');
       setActiveId(null);
       progress.set(
-        withTiming(0, { duration: 140 }, (finished) => {
+        withTiming(0, { duration: 160 }, (finished) => {
           if (finished) scheduleOnRN(clearSession);
         }),
       );
@@ -146,13 +198,7 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
     const trackHover = (x: number, y: number) => {
       const prev = hover.get();
       if (lensMode.get() === 'hover') {
-        fx.set(x);
-        fy.set(y);
-        const id = tileAt(x, y)?.id ?? null;
-        if (id !== activeSV.get()) {
-          activeSV.set(id ?? '');
-          setActiveId(id);
-        }
+        follow(x, y, false);
         return;
       }
       if (lensMode.get()) return;
@@ -166,14 +212,22 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
         hoverTimer.set(0);
         if (lensMode.get()) return;
         const p = hover.get();
-        const t = tileAt(p.x, p.y);
-        if (!t) return;
-        fx.set(p.x);
-        fy.set(p.y);
+        if (!tileAt(p.x, p.y)) return;
+        follow(p.x, p.y, true);
         lensOn.set(true);
-        openLens('hover', t.id);
-      }, lensTokens.hoverMs);
+        openLens('hover');
+      }, inflate.hoverMs);
       hoverTimer.set(timer as unknown as number);
+    };
+
+    // A hold can start while a hover bubble is already up (click-and-hold on web, or
+    // browsers that report touch as a mouse). Take that bubble over rather than
+    // closing it, which would race with the hold and leave it unresponsive.
+    const startHold = () => {
+      if (hoverTimer.get()) clearTimeout(hoverTimer.get());
+      hoverTimer.set(0);
+      if (lensMode.get() === 'hover') lensMode.set('hold');
+      else openLens('hold');
     };
 
     const openDetail = (x: number, y: number) => {
@@ -242,27 +296,18 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
         if (ok) openDetail(e.x, e.y);
       });
 
-    // Touch and hold on a tile, then drag: the lens follows the finger and closes on lift.
+    // Touch and hold on a tile: it inflates into a bubble above the finger, follows a
+    // drag across the canvas, and closes on lift.
     const hold = Gesture.Pan()
-      .activateAfterLongPress(lensTokens.holdMs)
+      .activateAfterLongPress(inflate.holdMs)
       .onStart((e) => {
-        const t = hitTest(tiles, (e.x - tx.get()) / scale.get(), (e.y - ty.get()) / scale.get());
-        if (!t) return;
-        fx.set(e.x);
-        fy.set(e.y);
+        if (!hitTest(tiles, (e.x - tx.get()) / scale.get(), (e.y - ty.get()) / scale.get())) return;
+        follow(e.x, e.y, true);
         lensOn.set(true);
-        scheduleOnRN(cancelHover);
-        scheduleOnRN(openLens, 'hold', t.id);
+        scheduleOnRN(startHold);
       })
       .onUpdate((e) => {
-        if (!lensOn.get()) return;
-        fx.set(e.x);
-        fy.set(e.y);
-        const id = hitTest(tiles, (e.x - tx.get()) / scale.get(), (e.y - ty.get()) / scale.get())?.id ?? '';
-        if (id !== activeSV.get()) {
-          activeSV.set(id);
-          scheduleOnRN(setActiveId, id || null);
-        }
+        if (lensOn.get()) follow(e.x, e.y, false);
       })
       .onFinalize(() => {
         if (lensOn.get()) scheduleOnRN(closeLens);
@@ -273,17 +318,25 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
     const gesture =
       Platform.OS === 'web'
         ? Gesture.Simultaneous(
+            // Mouse only: on touch screens the browser also reports hover, which would
+            // race the hold gesture and close the bubble as soon as the finger moved.
             Gesture.Hover()
               .runOnJS(true)
-              .onBegin((e) => trackHover(e.x, e.y))
-              .onUpdate((e) => trackHover(e.x, e.y))
-              .onFinalize(() => cancelHover()),
+              .onBegin((e) => {
+                if (e.pointerType === PointerType.MOUSE) trackHover(e.x, e.y);
+              })
+              .onUpdate((e) => {
+                if (e.pointerType === PointerType.MOUSE) trackHover(e.x, e.y);
+              })
+              .onFinalize((e) => {
+                if (e.pointerType === PointerType.MOUSE) cancelHover();
+              }),
             touch,
           )
         : touch;
 
     return { gesture, onWheel };
-  }, [layout, size.width, size.height, tx, ty, scale, fx, fy, progress, lensOn, activeSV, lensMode, hover, hoverTimer]);
+  }, [layout, size.width, size.height, tx, ty, scale, fx, fy, progress, lensOn, activeSV, lensMode, hover, hoverTimer, focusX, focusY, zoom]);
 
   useWheel(containerRef, handlers.onWheel);
 
@@ -294,6 +347,8 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     if (width !== size.width || height !== size.height) setSize({ width, height });
+    // How far the bubble may rise over the header before it flips below the finger.
+    containerRef.current?.measureInWindow((_x, y) => setWindowTop(y));
   };
 
   return (
@@ -317,14 +372,26 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
         </View>
       </GestureDetector>
       {session && (
-        <Lens session={session} itemsById={itemsById} activeId={activeId} fx={fx} fy={fy} progress={progress} />
+        <InflateBubble
+          session={session}
+          itemsById={itemsById}
+          activeId={activeId}
+          fx={fx}
+          fy={fy}
+          cx={focusX}
+          cy={focusY}
+          zoom={zoom}
+          progress={progress}
+          viewWidth={size.width}
+          minTop={insets.top + 8 - windowTop}
+        />
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // Not clipped, and stacked above the header and dock, so the lens can spill over them.
+  // Not clipped, and stacked above the header, so the bubble can rise over it.
   container: {
     flex: 1,
     zIndex: 2,
