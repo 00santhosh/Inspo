@@ -75,25 +75,15 @@ export const canvas = {
   maxScale: 3,
 } as const;
 
-/** Hold-to-bulge: the held tile grows in place above the finger and pushes its neighbours aside. */
+/** Hold-to-bulge: a balloon pushes the canvas up from behind, under the finger. */
 export const bulge = {
-  /** Largest size of the held tile, as a share of the canvas and in points. */
-  maxWidthRatio: 0.5,
-  maxWidth: 220,
-  maxHeightRatio: 0.42,
-  maxHeight: 270,
-  /** Zoom limits for the held tile, relative to its on-screen size. */
-  minZoom: 1.5,
-  maxZoom: 2.2,
-  /** Space between the fingertip and the held tile's bottom edge. */
-  fingerGap: 16,
-  /** Clear space kept around the held tile before neighbours start. */
-  margin: 10,
-  /** Nudge for the next ring out: the held tile's growth times this, fading over this many bulge radii. */
-  push: 0.35,
-  falloff: 0.9,
-  /** How much the nearest neighbours shrink (0.25 = to 75%). */
-  shrink: 0.25,
+  /** Balloon radius in points, and its cap as a share of the canvas width. */
+  radius: 130,
+  maxRadiusRatio: 0.34,
+  /** Magnification at the balloon's centre. */
+  zoom: 1.8,
+  /** How far above the fingertip the balloon's centre sits, in radii (the finger rests near its lower edge). */
+  lift: 0.35,
   holdMs: Platform.OS === 'web' ? 600 : 1000,
   hoverMs: 600,
 } as const;

@@ -10,12 +10,12 @@ const videos = [
     title: 'Big Buck Bunny',
     mediaUrl: 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4',
     thumbUrl:
-      'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Big_buck_bunny_poster_big.jpg/960px-Big_buck_bunny_poster_big.jpg',
+      'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Big_buck_bunny_poster_big.jpg/330px-Big_buck_bunny_poster_big.jpg',
   },
   {
     title: 'Sintel',
     mediaUrl: 'https://test-videos.co.uk/vids/sintel/mp4/h264/360/Sintel_360_10s_1MB.mp4',
-    thumbUrl: 'https://upload.wikimedia.org/wikipedia/commons/8/8f/Sintel_poster.jpg',
+    thumbUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Sintel_poster.jpg/330px-Sintel_poster.jpg',
   },
 ];
 
@@ -72,7 +72,7 @@ function build(): Item[] {
         id: `demo-link-${i}`,
         kind: 'link',
         createdAt,
-        link: { ...l, imageUrl: `https://picsum.photos/seed/link${i}/600/360` },
+        link: { ...l, imageUrl: `https://picsum.photos/seed/link${i}/300/180` },
       });
     } else if (i % 9 === 5) {
       items.push({ id: `demo-note-${i}`, kind: 'note', createdAt, body: notes[(i / 9) % notes.length | 0] });
@@ -88,7 +88,8 @@ function build(): Item[] {
         kind: 'image',
         createdAt,
         mediaUrl: `https://picsum.photos/seed/inspo${i}/${w * 2}/${h * 2}`,
-        thumbUrl: `https://picsum.photos/seed/inspo${i}/${w}/${h}`,
+        // Tile-sized thumbnail; the canvas keeps decoded images in GPU memory.
+        thumbUrl: `https://picsum.photos/seed/inspo${i}/${w / 2}/${Math.round(h / 2)}`,
         width: w,
         height: h,
       });

@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassIconButton } from '@/components/glass';
 import { useItem } from '@/data/items';
-import { formatDuration } from '@/features/canvas/tile';
+import { formatDuration } from '@/lib/format';
 import type { Item } from '@/lib/types';
 import { colors, fonts, radius, shadow } from '@/theme/tokens';
 

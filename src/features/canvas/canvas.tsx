@@ -1,12 +1,21 @@
+import {
+  Canvas as SkiaCanvas,
+  Fill,
+  Group,
+  ImageShader,
+  RuntimeShader,
+  Shader,
+  Skia,
+  type CanvasRef,
+  type SkImage,
+} from '@shopify/react-native-skia';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { Gesture, GestureDetector, PointerType } from 'react-native-gesture-handler';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
+import {
   cancelAnimation,
-  useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
   withDecay,
@@ -15,19 +24,19 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
-import { BulgeFocus, type HeldItem } from '@/features/bulge/bulge-focus';
-import { heldPlacement, heldZoom, lerpRect, type Rect } from '@/features/bulge/bulge-math';
-import { BulgeTile } from '@/features/bulge/bulge-tile';
-import { DotGrid } from '@/features/canvas/dot-grid';
+import { HeldCaption } from '@/features/canvas/held-caption';
 import { hitIndex, hitTest, layoutCanvas, type TileRect } from '@/features/canvas/layout';
 import { useWheel } from '@/features/canvas/use-wheel';
+import { useCanvasFonts, useSkiaImages } from '@/features/skia/resources';
+import { bulgeEffect, dotGridEffect } from '@/features/skia/shaders';
+import { SkiaTile } from '@/features/skia/skia-tile';
 import type { Item } from '@/lib/types';
 import { bulge, colors, canvas as tokens } from '@/theme/tokens';
 
 const EDGE = 48;
-const POP_SPRING = { damping: 15, stiffness: 220, mass: 0.8 };
-const SWITCH_SPRING = { damping: 20, stiffness: 260, mass: 0.8 };
-const FOLLOW_SPRING = { damping: 26, stiffness: 420, mass: 0.6 };
+const INFLATE_SPRING = { damping: 14, stiffness: 180, mass: 0.9 };
+const FOLLOW_SPRING = { damping: 24, stiffness: 380, mass: 0.6 };
+const SOURCE_SPRING = { damping: 22, stiffness: 240, mass: 0.8 };
 
 /** Allowed translation range for one axis; pins the world to the top-left when it fits in the view. */
 function range(s: number, view: number, world: number): [number, number] {
@@ -48,7 +57,19 @@ function clampScale(s: number) {
   return Math.min(tokens.maxScale, Math.max(tokens.minScale, s));
 }
 
+function imageUrlOf(item: Item) {
+  if (item.kind === 'link') return item.link?.imageUrl ?? null;
+  if (item.kind === 'image' || item.kind === 'video') return item.thumbUrl ?? item.mediaUrl ?? null;
+  return null;
+}
+
 type Mode = 'hold' | 'hover';
+
+// On native the balloon is a live image filter over the canvas. Skia's web build
+// (CanvasKit) has no runtime-shader image filter, so on web the canvas is captured when
+// the balloon starts (it cannot pan or zoom while held) and the same shader runs over
+// that picture.
+const LIVE_FILTER = Platform.OS !== 'web';
 
 /** Increment resetSignal to animate back to the default view. */
 export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?: number }) {
@@ -58,26 +79,26 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
     [items, size.width, size.height],
   );
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
+  const fonts = useCanvasFonts();
+  const images = useSkiaImages(useMemo(() => items.map(imageUrlOf).filter((u): u is string => !!u), [items]));
+  const R = Math.min(bulge.radius, size.width * bulge.maxRadiusRatio);
+  const gridColors = useMemo(
+    () => ({ dot: Array.from(Skia.Color(colors.dot)), background: Array.from(Skia.Color(colors.canvas)) }),
+    [],
+  );
 
   // Canvas pan and zoom.
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
   const scale = useSharedValue(1);
 
-  // Bulge state. World units unless noted.
-  const fx = useSharedValue(0); // finger, container coordinates
-  const fy = useSharedValue(0);
-  const strength = useSharedValue(0); // 0 = flat canvas, 1 = fully inflated
+  // Balloon, in container coordinates: where it sits, the point it magnifies, and how inflated it is.
+  const cx = useSharedValue(0);
+  const cy = useSharedValue(0);
+  const sx = useSharedValue(0);
+  const sy = useSharedValue(0);
+  const strength = useSharedValue(0);
   const heldIndex = useSharedValue(-1);
-  const base = useSharedValue<Rect>({ x: 0, y: 0, w: 0, h: 0 }); // held tile's own rect
-  const tgtX = useSharedValue(0); // where the held tile is going
-  const tgtY = useSharedValue(0);
-  const tgtW = useSharedValue(0);
-  const tgtH = useSharedValue(0);
-  const finalW = useSharedValue(0); // held tile's final size, screen points
-  const finalH = useSharedValue(0);
-  const sessionScale = useSharedValue(1);
-  const minTop = useSharedValue(0);
   const active = useSharedValue(false);
 
   // Event-handler state. Shared values rather than refs so the React Compiler knows
@@ -86,20 +107,40 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
   const hover = useSharedValue({ x: 0, y: 0, ax: 0, ay: 0 });
   const hoverTimer = useSharedValue(0);
 
-  const [held, setHeld] = useState<HeldItem | null>(null);
-  const [windowTop, setWindowTop] = useState(0);
-  const insets = useSafeAreaInsets();
+  const [heldId, setHeldId] = useState<string | null>(null);
+  // The bulge filter costs a full-canvas pass per frame, so it is only attached while in use.
+  const [bulging, setBulging] = useState(false);
+  const [snapshot, setSnapshot] = useState<SkImage | null>(null);
   const containerRef = useRef<View>(null);
+  // The Skia canvas handle, for the web snapshot. A shared value rather than a ref so
+  // gesture handlers can use it without reading a ref, and rather than state because
+  // Skia hands over a new handle on every render.
+  const skiaCanvas = useSharedValue<CanvasRef | null>(null);
 
-  // The held tile's current rect: from its spot on the canvas to its place above the finger.
-  const heldWorld = useDerivedValue(() =>
-    lerpRect(base.get(), { x: tgtX.get(), y: tgtY.get(), w: tgtW.get(), h: tgtH.get() }, strength.get()),
-  );
-  const heldScreen = useDerivedValue(() => {
-    const r = heldWorld.get();
+  const worldTransform = useDerivedValue(() => [
+    { translateX: tx.get() },
+    { translateY: ty.get() },
+    { scale: scale.get() },
+  ]);
+  const dotUniforms = useDerivedValue(() => {
+    // Keep dots 18–36pt apart at any zoom; doubling density keeps them on the world grid.
     const s = scale.get();
-    return { x: r.x * s + tx.get(), y: r.y * s + ty.get(), w: r.w * s, h: r.h * s };
+    const cell = tokens.dotSpacing * (s / Math.pow(2, Math.floor(Math.log2(s))));
+    return {
+      origin: [tx.get(), ty.get()],
+      cell,
+      radius: tokens.dotRadius,
+      dotColor: gridColors.dot,
+      background: gridColors.background,
+    };
   });
+  const bulgeUniforms = useDerivedValue(() => ({
+    center: [cx.get(), cy.get()],
+    source: [sx.get(), sy.get()],
+    radius: R,
+    strength: strength.get(),
+    zoom: bulge.zoom,
+  }));
 
   // Start each layout (first load, filter change, resize) from the top-left.
   useEffect(() => {
@@ -119,11 +160,6 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetSignal]);
 
-  // The held tile may rise over the header, but not past the status bar.
-  useEffect(() => {
-    minTop.set(insets.top + 8 - windowTop);
-  }, [insets.top, windowTop, minTop]);
-
   const handlers = useMemo(() => {
     const tiles: TileRect[] = layout?.tiles ?? [];
     const W = layout?.width ?? 0;
@@ -133,67 +169,63 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
 
     const tileAt = (x: number, y: number) => hitTest(tiles, (x - tx.get()) / scale.get(), (y - ty.get()) / scale.get());
 
-    const showHeld = (index: number, width: number, height: number, k: number) => {
-      const item = itemsById.get(tiles[index]?.id ?? '');
-      if (item) setHeld({ item, width, height, k });
-    };
-
     /**
-     * Track the finger: the tile under it becomes the held one, and the held tile is
-     * placed above the fingertip. `start` snaps instead of animating, for a new bulge.
+     * Track the finger. The balloon sits just above the fingertip (below it near the
+     * top edge) and magnifies the tile under the finger, centred on that tile.
+     * `start` snaps into place instead of animating.
      */
     const follow = (x: number, y: number, start: boolean) => {
       'worklet';
-      fx.set(x);
-      fy.set(y);
       const s = scale.get();
       const i = hitIndex(tiles, (x - tx.get()) / s, (y - ty.get()) / s);
-      if (i >= 0 && (start || i !== heldIndex.get())) {
-        const t = tiles[i];
-        const z = heldZoom(t.w * s, t.h * s, vw, vh);
-        finalW.set(t.w * s * z);
-        finalH.set(t.h * s * z);
-        if (start) {
-          base.set({ x: t.x, y: t.y, w: t.w, h: t.h });
-          tgtW.set(t.w * z);
-          tgtH.set(t.h * z);
-        } else {
-          tgtW.set(withSpring(t.w * z, SWITCH_SPRING));
-          tgtH.set(withSpring(t.h * z, SWITCH_SPRING));
-        }
+      if (i >= 0 && i !== heldIndex.get()) {
         heldIndex.set(i);
-        scheduleOnRN(showHeld, i, t.w * s * z, t.h * s * z, s * z);
+        scheduleOnRN(setHeldId, tiles[i].id);
       }
-      if (heldIndex.get() < 0) return;
-      const p = heldPlacement(x, y, finalW.get(), finalH.get(), vw, minTop.get());
-      const lx = (p.left - tx.get()) / s;
-      const ly = (p.top - ty.get()) / s;
+      const held = heldIndex.get() >= 0 ? tiles[heldIndex.get()] : null;
+      const srcX = held ? (held.x + held.w / 2) * s + tx.get() : x;
+      const srcY = held ? (held.y + held.h / 2) * s + ty.get() : y;
+      const lift = R * bulge.lift;
+      const ballX = Math.min(Math.max(x, R * 0.5), vw - R * 0.5);
+      const ballY = y - lift - R < 0 ? y + lift : y - lift;
       if (start) {
-        tgtX.set(lx);
-        tgtY.set(ly);
+        cx.set(ballX);
+        cy.set(ballY);
+        sx.set(srcX);
+        sy.set(srcY);
       } else {
-        tgtX.set(withSpring(lx, FOLLOW_SPRING));
-        tgtY.set(withSpring(ly, FOLLOW_SPRING));
+        cx.set(withSpring(ballX, FOLLOW_SPRING));
+        cy.set(withSpring(ballY, FOLLOW_SPRING));
+        sx.set(withSpring(srcX, SOURCE_SPRING));
+        sy.set(withSpring(srcY, SOURCE_SPRING));
       }
     };
 
-    /** Inflate the tile under (x, y). Returns false when there is no tile there. */
+    const beginBulge = () => {
+      // A CPU copy: the GPU-backed snapshot reads back empty once the next frame is drawn.
+      if (!LIVE_FILTER) setSnapshot(skiaCanvas.get()?.makeImageSnapshot()?.makeNonTextureImage() ?? null);
+      setBulging(true);
+    };
+
+    /** Inflate the balloon under (x, y). Returns false when there is no tile there. */
     const startBulge = (x: number, y: number) => {
       'worklet';
       const s = scale.get();
       if (hitIndex(tiles, (x - tx.get()) / s, (y - ty.get()) / s) < 0) return false;
-      sessionScale.set(s);
       follow(x, y, true);
       active.set(true);
       strength.set(0);
-      strength.set(withSpring(1, POP_SPRING));
+      strength.set(withSpring(1, INFLATE_SPRING));
+      scheduleOnRN(beginBulge);
       return true;
     };
 
-    const clearHeld = () => {
+    const finishBulge = () => {
       if (mode.get()) return;
       heldIndex.set(-1);
-      setHeld(null);
+      setHeldId(null);
+      setBulging(false);
+      setSnapshot(null);
     };
 
     const endBulge = () => {
@@ -201,8 +233,8 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
       mode.set('');
       active.set(false);
       strength.set(
-        withTiming(0, { duration: 200 }, (finished) => {
-          if (finished) scheduleOnRN(clearHeld);
+        withTiming(0, { duration: 220 }, (finished) => {
+          if (finished) scheduleOnRN(finishBulge);
         }),
       );
     };
@@ -223,7 +255,7 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
       if (fresh && Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     };
 
-    // Web: rest the pointer on a tile for ~600ms to inflate it; it then follows the pointer.
+    // Web: rest the pointer on a tile for ~600ms to inflate the balloon; it then follows the pointer.
     const trackHover = (x: number, y: number) => {
       const prev = hover.get();
       if (mode.get() === 'hover') {
@@ -312,8 +344,8 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
         if (ok) openDetail(e.x, e.y);
       });
 
-    // Touch and hold a tile: it bulges up above the finger, pushing its neighbours aside,
-    // follows a drag across the canvas, and settles back on lift.
+    // Touch and hold a tile: a balloon pushes the canvas up from behind, just above the
+    // finger, follows a drag, and deflates on lift.
     const hold = Gesture.Pan()
       .activateAfterLongPress(bulge.holdMs)
       .onStart((e) => {
@@ -351,84 +383,79 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
         : touch;
 
     return { gesture, onWheel };
-  }, [
-    layout,
-    size.width,
-    size.height,
-    itemsById,
-    tx,
-    ty,
-    scale,
-    fx,
-    fy,
-    strength,
-    heldIndex,
-    base,
-    tgtX,
-    tgtY,
-    tgtW,
-    tgtH,
-    finalW,
-    finalH,
-    sessionScale,
-    minTop,
-    active,
-    mode,
-    hover,
-    hoverTimer,
-  ]);
+  }, [layout, size.width, size.height, R, tx, ty, scale, cx, cy, sx, sy, strength, heldIndex, active, mode, hover, hoverTimer, skiaCanvas]);
 
   useWheel(containerRef, handlers.onWheel);
-
-  const world = useAnimatedStyle(() => ({
-    transform: [{ translateX: tx.get() }, { translateY: ty.get() }, { scale: scale.get() }],
-  }));
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
     if (width !== size.width || height !== size.height) setSize({ width, height });
-    containerRef.current?.measureInWindow((_x, y) => setWindowTop(y));
   };
+
+  const held = heldId ? itemsById.get(heldId) : undefined;
 
   return (
     <View ref={containerRef} style={styles.container} onLayout={onLayout}>
       <GestureDetector gesture={handlers.gesture}>
         <View style={styles.clip}>
-          <DotGrid id="canvas-dots" tx={tx} ty={ty} scale={scale} width={size.width} height={size.height} />
-          {layout && (
-            <Animated.View style={[styles.world, { width: layout.width, height: layout.height }, world]}>
-              {layout.tiles.map((t, i) => {
-                const item = itemsById.get(t.id);
-                return item ? (
-                  <BulgeTile
-                    key={t.id}
-                    item={item}
-                    rect={t}
-                    index={i}
-                    held={heldWorld}
-                    base={base}
-                    heldIndex={heldIndex}
-                    strength={strength}
-                    scale={sessionScale}
-                  />
-                ) : null;
-              })}
-            </Animated.View>
+          {size.width > 0 && (
+            <SkiaCanvas
+              ref={(c) => {
+                if (!LIVE_FILTER) skiaCanvas.set(c);
+              }}
+              style={StyleSheet.absoluteFill}>
+              <Group>
+                {bulging && LIVE_FILTER ? <RuntimeShader source={bulgeEffect()} uniforms={bulgeUniforms} /> : null}
+                <Fill>
+                  <Shader source={dotGridEffect()} uniforms={dotUniforms} />
+                </Fill>
+                <Group transform={worldTransform}>
+                  {layout?.tiles.map((t) => {
+                    const item = itemsById.get(t.id);
+                    if (!item) return null;
+                    const url = imageUrlOf(item);
+                    return (
+                      <SkiaTile
+                        key={t.id}
+                        item={item}
+                        r={t}
+                        image={url ? (images.get(url) ?? null) : null}
+                        fonts={fonts}
+                        playing={LIVE_FILTER && bulging && t.id === heldId && item.kind === 'video'}
+                      />
+                    );
+                  })}
+                </Group>
+              </Group>
+              {snapshot ? (
+                <Fill>
+                  <Shader source={bulgeEffect()} uniforms={bulgeUniforms}>
+                    <ImageShader
+                      image={snapshot}
+                      fit="fill"
+                      tx="clamp"
+                      ty="clamp"
+                      rect={{ x: 0, y: 0, width: size.width, height: size.height }}
+                    />
+                  </Shader>
+                </Fill>
+              ) : null}
+            </SkiaCanvas>
           )}
         </View>
       </GestureDetector>
-      {held && <BulgeFocus held={held} rect={heldScreen} strength={strength} />}
+      {held && bulging ? (
+        <HeldCaption item={held} cx={cx} cy={cy} radius={R} strength={strength} viewWidth={size.width} />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // Not clipped, and stacked above the header, so the held tile can rise over it.
   container: {
     flex: 1,
     zIndex: 2,
     ...(Platform.OS === 'web' ? ({ userSelect: 'none' } as object) : null),
   },
   clip: { ...StyleSheet.absoluteFill, overflow: 'hidden', backgroundColor: colors.canvas },
-  world: { position: 'absolute', left: 0, top: 0, transformOrigin: 'top left', pointerEvents: 'none' },
 });
