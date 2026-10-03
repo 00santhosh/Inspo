@@ -44,3 +44,6 @@ example
 
 # Skia web runtime; copied from canvaskit-wasm on install (npm run postinstall)
 /public/canvaskit.wasm
+
+.vercel
+.env*
