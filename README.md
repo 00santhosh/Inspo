@@ -41,13 +41,13 @@ Import the repo in Vercel. `vercel.json` sets the build (`expo export -p web`) a
 | `src/app/index.tsx` | Canvas screen: sky header, filter tabs, canvas, capture dock |
 | `src/app/item/[id].tsx` | Detail view |
 | `src/features/canvas/layout.ts` | Staggered masonry layout and hit-testing |
-| `src/features/canvas/canvas.tsx` | Pan, pinch, wheel, tap, and hold / hover to inflate a tile |
-| `src/features/inflate/` | The magnified bubble shown above the finger |
+| `src/features/canvas/canvas.tsx` | Pan, pinch, wheel, tap, and hold / hover to bulge a tile |
+| `src/features/bulge/` | Hold-to-bulge: layout maths, pushed neighbour tiles, the enlarged held tile |
 | `src/data/` | Items store (Supabase or demo data) |
 | `src/components/` | Glass buttons and pills, sky gradient, icons, filter tabs, capture dock |
 | `src/theme/tokens.ts` | Colours, radii, shadows, lens and canvas constants |
-| `design/` | Visual references (`ui-style-reference.png` sets the colours, glass buttons and shadows) |
+| `design/` | References: `ui-style-reference.png` (colours, glass, shadows), `wireframe-*.jpg` (canvas layout and the hold bulge) |
 
-## Hold to inflate
+## Hold to bulge
 
-Hold a tile for 1s on mobile, or rest the pointer for 600ms (or click and hold) on web. The tile inflates into a magnified bubble that rises from the fingertip and floats above it, so the finger never covers what you are looking at. The bubble frames the whole held item with a little of its surroundings, and a caption says what it is. Drag and the bubble follows, gliding to each tile under the finger; near the top of the screen it flips below the finger. Videos autoplay muted inside it. Tiles are re-rendered at the magnified size, so images and text stay sharp.
+Hold a tile for 1s on mobile, or rest the pointer for 600ms (or click and hold) on web. The tile grows in place to about twice its size, rising so its bottom edge sits just above the fingertip, and its neighbours slide outward and shrink to make room, hugging the bulge (see `design/wireframe-hold-bulge.jpg`). Drag and the bulge follows the finger, handing over to each tile it reaches; near the top of the screen the tile grows below the finger instead. A caption says what the item is, videos autoplay muted, and on lift everything settles back. The enlarged tile is drawn at full size, so images and text stay sharp. Tuning lives in `bulge` in `src/theme/tokens.ts`.

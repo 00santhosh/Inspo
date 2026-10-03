@@ -73,11 +73,18 @@ export function layoutCanvas(items: Item[], viewportWidth: number, viewportHeigh
   };
 }
 
-export function hitTest(tiles: TileRect[], x: number, y: number): TileRect | undefined {
+/** Index of the tile containing the world point (x, y), or -1. */
+export function hitIndex(tiles: TileRect[], x: number, y: number): number {
   'worklet';
   for (let i = 0; i < tiles.length; i++) {
     const t = tiles[i];
-    if (x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h) return t;
+    if (x >= t.x && x <= t.x + t.w && y >= t.y && y <= t.y + t.h) return i;
   }
-  return undefined;
+  return -1;
+}
+
+export function hitTest(tiles: TileRect[], x: number, y: number): TileRect | undefined {
+  'worklet';
+  const i = hitIndex(tiles, x, y);
+  return i < 0 ? undefined : tiles[i];
 }

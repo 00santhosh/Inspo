@@ -75,19 +75,25 @@ export const canvas = {
   maxScale: 3,
 } as const;
 
-/** The magnified bubble that rises above the finger on hold. */
-export const inflate = {
-  width: 236,
-  height: 280,
-  radius: 28,
-  /** Space between the fingertip and the bubble's tail, so the finger never covers it. */
-  fingerGap: 30,
-  tail: 18,
-  /** The held tile fills about this share of the bubble; the rest shows its surroundings. */
-  fill: 0.76,
-  /** Zoom limits, relative to the canvas's current scale. */
-  minZoom: 1.4,
-  maxZoom: 3,
+/** Hold-to-bulge: the held tile grows in place above the finger and pushes its neighbours aside. */
+export const bulge = {
+  /** Largest size of the held tile, as a share of the canvas and in points. */
+  maxWidthRatio: 0.5,
+  maxWidth: 220,
+  maxHeightRatio: 0.42,
+  maxHeight: 270,
+  /** Zoom limits for the held tile, relative to its on-screen size. */
+  minZoom: 1.5,
+  maxZoom: 2.2,
+  /** Space between the fingertip and the held tile's bottom edge. */
+  fingerGap: 16,
+  /** Clear space kept around the held tile before neighbours start. */
+  margin: 10,
+  /** Nudge for the next ring out: the held tile's growth times this, fading over this many bulge radii. */
+  push: 0.35,
+  falloff: 0.9,
+  /** How much the nearest neighbours shrink (0.25 = to 75%). */
+  shrink: 0.25,
   holdMs: Platform.OS === 'web' ? 600 : 1000,
   hoverMs: 600,
 } as const;
