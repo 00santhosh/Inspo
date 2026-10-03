@@ -33,8 +33,9 @@ half4 main(float2 xy) {
 /**
  * The balloon: an image filter that bulges the canvas as if pushed up from behind.
  *
- * Inside the radius the content is magnified, most at the centre and easing back to 1x
- * at the rim, so neighbouring tiles curve and stretch around the edge. The centre shows
+ * Inside the radius the content is magnified evenly across the middle (so the held image
+ * shows large and undistorted) and eases back to 1x towards the rim, so neighbouring
+ * tiles are squeezed, curved and stretched around the edge. The centre shows
  * the area around `source` (the held tile) even though the bulge sits at `center`
  * (above the finger), blending back to the real position at the rim. Light falls from
  * the top-left across the dome, and a soft shadow rings the outside.
@@ -58,9 +59,9 @@ half4 main(float2 xy) {
     return c;
   }
 
-  // 1 at the centre, 0 at the rim, with zero slope at both ends so there is no seam.
-  float w = 1.0 - r * r;
-  w = w * w;
+  // Flat (full zoom) across the middle, falling to 0 at the rim with zero slope at both
+  // ends of the fall, so there is no visible seam.
+  float w = 1.0 - smoothstep(0.45, 1.0, r);
   float z = mix(1.0, zoom, strength);
   float s = 1.0 - (1.0 - 1.0 / z) * w;
   float2 p = center + d * s + (source - center) * (w * strength);

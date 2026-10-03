@@ -81,7 +81,7 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const fonts = useCanvasFonts();
   const images = useSkiaImages(useMemo(() => items.map(imageUrlOf).filter((u): u is string => !!u), [items]));
-  const R = Math.min(bulge.radius, size.width * bulge.maxRadiusRatio);
+  const R = Math.min(bulge.maxRadius, (size.width * bulge.widthRatio) / 2);
   const gridColors = useMemo(
     () => ({ dot: Array.from(Skia.Color(colors.dot)), background: Array.from(Skia.Color(colors.canvas)) }),
     [],

@@ -77,11 +77,11 @@ export const canvas = {
 
 /** Hold-to-bulge: a balloon pushes the canvas up from behind, under the finger. */
 export const bulge = {
-  /** Balloon radius in points, and its cap as a share of the canvas width. */
-  radius: 130,
-  maxRadiusRatio: 0.34,
+  /** Balloon diameter as a share of the canvas width (75% on a phone), capped in points for wide screens. */
+  widthRatio: 0.75,
+  maxRadius: 220,
   /** Magnification at the balloon's centre. */
-  zoom: 1.8,
+  zoom: 2.6,
   /** How far above the fingertip the balloon's centre sits, in radii (the finger rests near its lower edge). */
   lift: 0.35,
   holdMs: Platform.OS === 'web' ? 600 : 1000,
