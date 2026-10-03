@@ -1,13 +1,16 @@
 import {
   Canvas as SkiaCanvas,
+  drawAsPicture,
   Fill,
+  FilterMode,
   Group,
-  ImageShader,
+  Rect,
   RuntimeShader,
   Shader,
   Skia,
-  type CanvasRef,
-  type SkImage,
+  TileMode,
+  type SkPaint,
+  type SkPicture,
 } from '@shopify/react-native-skia';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -17,6 +20,7 @@ import { Gesture, GestureDetector, PointerType } from 'react-native-gesture-hand
 import {
   cancelAnimation,
   useDerivedValue,
+  useFrameCallback,
   useSharedValue,
   withDecay,
   withSpring,
@@ -28,15 +32,15 @@ import { HeldCaption } from '@/features/canvas/held-caption';
 import { hitIndex, hitTest, layoutCanvas, type TileRect } from '@/features/canvas/layout';
 import { useWheel } from '@/features/canvas/use-wheel';
 import { useCanvasFonts, useSkiaImages } from '@/features/skia/resources';
-import { bulgeEffect, dotGridEffect } from '@/features/skia/shaders';
+import { bulgeFilterEffect, bulgePictureEffect, dotGridEffect } from '@/features/skia/shaders';
 import { SkiaTile } from '@/features/skia/skia-tile';
 import type { Item } from '@/lib/types';
 import { bulge, colors, canvas as tokens } from '@/theme/tokens';
 
 const EDGE = 48;
 const INFLATE_SPRING = { damping: 14, stiffness: 180, mass: 0.9 };
-const FOLLOW_SPRING = { damping: 24, stiffness: 380, mass: 0.6 };
-const SOURCE_SPRING = { damping: 22, stiffness: 240, mass: 0.8 };
+// Only smooths the jump when the balloon flips between above and below the finger.
+const FLIP_SPRING = { damping: 26, stiffness: 520, mass: 0.5 };
 
 /** Allowed translation range for one axis; pins the world to the top-left when it fits in the view. */
 function range(s: number, view: number, world: number): [number, number] {
@@ -57,6 +61,20 @@ function clampScale(s: number) {
   return Math.min(tokens.maxScale, Math.max(tokens.minScale, s));
 }
 
+/** -1..1: how far into an edge zone `pos` is (negative at the start edge), 0 outside it. */
+function edgePush(pos: number, size: number, zone: number) {
+  'worklet';
+  if (pos < zone) return -Math.pow((zone - Math.max(0, pos)) / zone, 2);
+  if (pos > size - zone) return Math.pow((Math.min(size, pos) - (size - zone)) / zone, 2);
+  return 0;
+}
+
+/** Dot spacing on screen: 18–36pt at any zoom; doubling density keeps dots on the world grid. */
+function dotCell(s: number) {
+  'worklet';
+  return tokens.dotSpacing * (s / Math.pow(2, Math.floor(Math.log2(s))));
+}
+
 function imageUrlOf(item: Item) {
   if (item.kind === 'link') return item.link?.imageUrl ?? null;
   if (item.kind === 'image' || item.kind === 'video') return item.thumbUrl ?? item.mediaUrl ?? null;
@@ -66,9 +84,9 @@ function imageUrlOf(item: Item) {
 type Mode = 'hold' | 'hover';
 
 // On native the balloon is a live image filter over the canvas. Skia's web build
-// (CanvasKit) has no runtime-shader image filter, so on web the canvas is captured when
-// the balloon starts (it cannot pan or zoom while held) and the same shader runs over
-// that picture.
+// (CanvasKit) has no runtime-shader image filter, so on web the canvas is recorded as a
+// picture when the balloon starts and the balloon shader draws from that picture,
+// positioned by the live pan offset, so auto-scroll still works.
 const LIVE_FILTER = Platform.OS !== 'web';
 
 /** Increment resetSignal to animate back to the default view. */
@@ -80,7 +98,9 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
   );
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const fonts = useCanvasFonts();
-  const images = useSkiaImages(useMemo(() => items.map(imageUrlOf).filter((u): u is string => !!u), [items]));
+  const { images, version: imagesVersion } = useSkiaImages(
+    useMemo(() => items.map(imageUrlOf).filter((u): u is string => !!u), [items]),
+  );
   const R = Math.min(bulge.maxRadius, (size.width * bulge.widthRatio) / 2);
   const gridColors = useMemo(
     () => ({ dot: Array.from(Skia.Color(colors.dot)), background: Array.from(Skia.Color(colors.canvas)) }),
@@ -92,7 +112,10 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
   const ty = useSharedValue(0);
   const scale = useSharedValue(1);
 
-  // Balloon, in container coordinates: where it sits, the point it magnifies, and how inflated it is.
+  // Balloon, in container coordinates: the finger, where the balloon sits, the point it
+  // magnifies (the finger), and how inflated it is.
+  const fx = useSharedValue(0);
+  const fy = useSharedValue(0);
   const cx = useSharedValue(0);
   const cy = useSharedValue(0);
   const sx = useSharedValue(0);
@@ -108,32 +131,23 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
   const hoverTimer = useSharedValue(0);
 
   const [heldId, setHeldId] = useState<string | null>(null);
-  // The bulge filter costs a full-canvas pass per frame, so it is only attached while in use.
+  // The bulge costs a full-canvas pass per frame, so it is only attached while in use.
   const [bulging, setBulging] = useState(false);
-  const [snapshot, setSnapshot] = useState<SkImage | null>(null);
+  const [scenePicture, setScenePicture] = useState<SkPicture | null>(null);
   const containerRef = useRef<View>(null);
-  // The Skia canvas handle, for the web snapshot. A shared value rather than a ref so
-  // gesture handlers can use it without reading a ref, and rather than state because
-  // Skia hands over a new handle on every render.
-  const skiaCanvas = useSharedValue<CanvasRef | null>(null);
 
   const worldTransform = useDerivedValue(() => [
     { translateX: tx.get() },
     { translateY: ty.get() },
     { scale: scale.get() },
   ]);
-  const dotUniforms = useDerivedValue(() => {
-    // Keep dots 18–36pt apart at any zoom; doubling density keeps them on the world grid.
-    const s = scale.get();
-    const cell = tokens.dotSpacing * (s / Math.pow(2, Math.floor(Math.log2(s))));
-    return {
-      origin: [tx.get(), ty.get()],
-      cell,
-      radius: tokens.dotRadius,
-      dotColor: gridColors.dot,
-      background: gridColors.background,
-    };
-  });
+  const dotUniforms = useDerivedValue(() => ({
+    origin: [tx.get(), ty.get()],
+    cell: dotCell(scale.get()),
+    radius: tokens.dotRadius,
+    dotColor: gridColors.dot,
+    background: gridColors.background,
+  }));
   const bulgeUniforms = useDerivedValue(() => ({
     center: [cx.get(), cy.get()],
     source: [sx.get(), sy.get()],
@@ -141,6 +155,72 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
     strength: strength.get(),
     zoom: bulge.zoom,
   }));
+
+  const renderTiles = (playing: boolean) =>
+    layout?.tiles.map((t) => {
+      const item = itemsById.get(t.id);
+      if (!item) return null;
+      const url = imageUrlOf(item);
+      return (
+        <SkiaTile
+          key={t.id}
+          item={item}
+          r={t}
+          image={url ? (images.get(url) ?? null) : null}
+          fonts={fonts}
+          playing={playing && t.id === heldId && item.kind === 'video'}
+        />
+      );
+    });
+
+  // Web: record the tiles as a picture when the balloon starts, and again if more images
+  // arrive while it is up (tiles scrolled into view may still be loading).
+  const worldW = layout?.width ?? 0;
+  const worldH = layout?.height ?? 0;
+  useEffect(() => {
+    if (LIVE_FILTER || !bulging) return;
+    let cancelled = false;
+    drawAsPicture(<Group>{renderTiles(false)}</Group>, Skia.XYWHRect(0, 0, worldW, worldH)).then(
+      (picture) => {
+        if (!cancelled) setScenePicture(picture);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // The picture is positioned live by the pan offset, so panning needs no re-record.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bulging, imagesVersion]);
+
+  const webPaint = useDerivedValue<SkPaint | null>(() => {
+    if (LIVE_FILTER || !scenePicture) return null;
+    const s = scale.get();
+    // Rasterise only the visible part of the world (plus a margin): Skia downsamples
+    // large picture tiles, which made the whole canvas blurry. The tile's top-left is
+    // the shader's origin, so shift it back to its world position.
+    const margin = 24;
+    const x0 = -tx.get() / s - margin;
+    const y0 = -ty.get() / s - margin;
+    const m = Skia.Matrix();
+    m.translate(tx.get(), ty.get());
+    m.scale(s, s);
+    m.translate(x0, y0);
+    const scene = scenePicture.makeShader(
+      TileMode.Decal,
+      TileMode.Decal,
+      FilterMode.Linear,
+      m,
+      Skia.XYWHRect(x0, y0, size.width / s + margin * 2, size.height / s + margin * 2),
+    );
+    // Same order as the uniforms are declared in bulgePictureEffect.
+    const uniforms = [
+      cx.get(), cy.get(), sx.get(), sy.get(), R, strength.get(), bulge.zoom,
+      tx.get(), ty.get(), dotCell(s), tokens.dotRadius, ...gridColors.dot, ...gridColors.background,
+    ];
+    const paint = Skia.Paint();
+    paint.setShader(bulgePictureEffect().makeShaderWithChildren(uniforms, [scene]));
+    return paint;
+  });
 
   // Start each layout (first load, filter change, resize) from the top-left.
   useEffect(() => {
@@ -170,41 +250,34 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
     const tileAt = (x: number, y: number) => hitTest(tiles, (x - tx.get()) / scale.get(), (y - ty.get()) / scale.get());
 
     /**
-     * Track the finger. The balloon sits just above the fingertip (below it near the
-     * top edge) and magnifies the tile under the finger, centred on that tile.
-     * `start` snaps into place instead of animating.
+     * Track the finger. The balloon sits just above the fingertip (below it near the top
+     * edge) and magnifies exactly what is under the finger, so it glides smoothly across
+     * tiles and the gaps between them. `start` snaps the flip position instead of animating.
      */
     const follow = (x: number, y: number, start: boolean) => {
       'worklet';
+      fx.set(x);
+      fy.set(y);
       const s = scale.get();
       const i = hitIndex(tiles, (x - tx.get()) / s, (y - ty.get()) / s);
       if (i >= 0 && i !== heldIndex.get()) {
         heldIndex.set(i);
         scheduleOnRN(setHeldId, tiles[i].id);
       }
-      const held = heldIndex.get() >= 0 ? tiles[heldIndex.get()] : null;
-      const srcX = held ? (held.x + held.w / 2) * s + tx.get() : x;
-      const srcY = held ? (held.y + held.h / 2) * s + ty.get() : y;
       const lift = R * bulge.lift;
-      const ballX = Math.min(Math.max(x, R * 0.5), vw - R * 0.5);
       const ballY = y - lift - R < 0 ? y + lift : y - lift;
-      if (start) {
-        cx.set(ballX);
-        cy.set(ballY);
-        sx.set(srcX);
-        sy.set(srcY);
-      } else {
-        cx.set(withSpring(ballX, FOLLOW_SPRING));
-        cy.set(withSpring(ballY, FOLLOW_SPRING));
-        sx.set(withSpring(srcX, SOURCE_SPRING));
-        sy.set(withSpring(srcY, SOURCE_SPRING));
-      }
-    };
-
-    const beginBulge = () => {
-      // A CPU copy: the GPU-backed snapshot reads back empty once the next frame is drawn.
-      if (!LIVE_FILTER) setSnapshot(skiaCanvas.get()?.makeImageSnapshot()?.makeNonTextureImage() ?? null);
-      setBulging(true);
+      // May hang a little off-screen, so it stays close to a finger at the edge.
+      const ballX = Math.min(Math.max(x, R * 0.25), vw - R * 0.25);
+      cx.set(ballX);
+      cy.set(start ? ballY : withSpring(ballY, FLIP_SPRING));
+      // The magnified point is the finger, kept within reach of the balloon's centre:
+      // pulled too far (finger at a screen edge) the dome twists.
+      const dx = x - ballX;
+      const dy = y - ballY;
+      const reach = R * 0.45;
+      const k = Math.min(1, reach / Math.max(1, Math.hypot(dx, dy)));
+      sx.set(ballX + dx * k);
+      sy.set(ballY + dy * k);
     };
 
     /** Inflate the balloon under (x, y). Returns false when there is no tile there. */
@@ -216,7 +289,7 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
       active.set(true);
       strength.set(0);
       strength.set(withSpring(1, INFLATE_SPRING));
-      scheduleOnRN(beginBulge);
+      scheduleOnRN(setBulging, true);
       return true;
     };
 
@@ -225,7 +298,7 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
       heldIndex.set(-1);
       setHeldId(null);
       setBulging(false);
-      setSnapshot(null);
+      setScenePicture(null);
     };
 
     const endBulge = () => {
@@ -301,6 +374,22 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
       }
     };
 
+    /** Edge auto-scroll while holding: called every frame with the frame's duration. */
+    const autoScroll = (dt: number) => {
+      'worklet';
+      if (!active.get() || mode.get() !== 'hold') return;
+      const x = fx.get();
+      const y = fy.get();
+      const px = edgePush(x, vw, bulge.autoScrollZone);
+      const py = edgePush(y, vh, bulge.autoScrollZone);
+      if (px === 0 && py === 0) return;
+      const s = scale.get();
+      // Finger near the right edge reveals what is to the right: the world moves left.
+      tx.set(clampTo(tx.get() - px * bulge.autoScrollSpeed * dt, s, vw, W));
+      ty.set(clampTo(ty.get() - py * bulge.autoScrollSpeed * dt, s, vh, H));
+      follow(x, y, false);
+    };
+
     const pan = Gesture.Pan()
       .onStart(() => {
         cancelAnimation(tx);
@@ -345,7 +434,7 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
       });
 
     // Touch and hold a tile: a balloon pushes the canvas up from behind, just above the
-    // finger, follows a drag, and deflates on lift.
+    // finger, follows a drag (scrolling the canvas near the edges), and deflates on lift.
     const hold = Gesture.Pan()
       .activateAfterLongPress(bulge.holdMs)
       .onStart((e) => {
@@ -382,10 +471,17 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
           )
         : touch;
 
-    return { gesture, onWheel };
-  }, [layout, size.width, size.height, R, tx, ty, scale, cx, cy, sx, sy, strength, heldIndex, active, mode, hover, hoverTimer, skiaCanvas]);
+    return { gesture, onWheel, autoScroll };
+  }, [layout, size.width, size.height, R, tx, ty, scale, fx, fy, cx, cy, sx, sy, strength, heldIndex, active, mode, hover, hoverTimer]);
 
   useWheel(containerRef, handlers.onWheel);
+
+  const scroller = useFrameCallback((frame) => {
+    handlers.autoScroll(Math.min(0.05, (frame.timeSincePreviousFrame ?? 16) / 1000));
+  }, false);
+  useEffect(() => {
+    scroller.setActive(bulging);
+  }, [bulging, scroller]);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -399,46 +495,16 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
       <GestureDetector gesture={handlers.gesture}>
         <View style={styles.clip}>
           {size.width > 0 && (
-            <SkiaCanvas
-              ref={(c) => {
-                if (!LIVE_FILTER) skiaCanvas.set(c);
-              }}
-              style={StyleSheet.absoluteFill}>
+            <SkiaCanvas style={StyleSheet.absoluteFill}>
               <Group>
-                {bulging && LIVE_FILTER ? <RuntimeShader source={bulgeEffect()} uniforms={bulgeUniforms} /> : null}
+                {bulging && LIVE_FILTER ? <RuntimeShader source={bulgeFilterEffect()} uniforms={bulgeUniforms} /> : null}
                 <Fill>
                   <Shader source={dotGridEffect()} uniforms={dotUniforms} />
                 </Fill>
-                <Group transform={worldTransform}>
-                  {layout?.tiles.map((t) => {
-                    const item = itemsById.get(t.id);
-                    if (!item) return null;
-                    const url = imageUrlOf(item);
-                    return (
-                      <SkiaTile
-                        key={t.id}
-                        item={item}
-                        r={t}
-                        image={url ? (images.get(url) ?? null) : null}
-                        fonts={fonts}
-                        playing={LIVE_FILTER && bulging && t.id === heldId && item.kind === 'video'}
-                      />
-                    );
-                  })}
-                </Group>
+                <Group transform={worldTransform}>{renderTiles(LIVE_FILTER && bulging)}</Group>
               </Group>
-              {snapshot ? (
-                <Fill>
-                  <Shader source={bulgeEffect()} uniforms={bulgeUniforms}>
-                    <ImageShader
-                      image={snapshot}
-                      fit="fill"
-                      tx="clamp"
-                      ty="clamp"
-                      rect={{ x: 0, y: 0, width: size.width, height: size.height }}
-                    />
-                  </Shader>
-                </Fill>
+              {!LIVE_FILTER && bulging && scenePicture ? (
+                <Rect x={0} y={0} width={size.width} height={size.height} paint={webPaint as unknown as SkPaint} />
               ) : null}
             </SkiaCanvas>
           )}

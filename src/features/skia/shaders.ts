@@ -12,6 +12,14 @@ function lazy(source: string) {
   };
 }
 
+const DOTS = `
+half4 dotsAt(float2 xy, float2 origin, float cell, float radius, half4 dotColor, half4 background) {
+  float2 p = mod(xy - origin + cell * 0.5, cell) - cell * 0.5;
+  float a = 1.0 - smoothstep(radius - 0.6, radius + 0.6, length(p));
+  return mix(background, dotColor, half(a));
+}
+`;
+
 /**
  * Dot grid in screen space. Dots sit at `origin + n * cell`, so passing the canvas's
  * pan offset and zoomed spacing keeps them fixed to the world.
@@ -22,38 +30,38 @@ uniform float cell;
 uniform float radius;
 uniform half4 dotColor;
 uniform half4 background;
-
+${DOTS}
 half4 main(float2 xy) {
-  float2 p = mod(xy - origin + cell * 0.5, cell) - cell * 0.5;
-  float a = 1.0 - smoothstep(radius - 0.6, radius + 0.6, length(p));
-  return mix(background, dotColor, half(a));
+  return dotsAt(xy, origin, cell, radius, dotColor, background);
 }
 `);
 
-/**
- * The balloon: an image filter that bulges the canvas as if pushed up from behind.
- *
- * Inside the radius the content is magnified evenly across the middle (so the held image
- * shows large and undistorted) and eases back to 1x towards the rim, so neighbouring
- * tiles are squeezed, curved and stretched around the edge. The centre shows
- * the area around `source` (the held tile) even though the bulge sits at `center`
- * (above the finger), blending back to the real position at the rim. Light falls from
- * the top-left across the dome, and a soft shadow rings the outside.
- */
-export const bulgeEffect = lazy(`
-uniform shader image;
+const BULGE_UNIFORMS = `
 uniform float2 center;
 uniform float2 source;
 uniform float radius;
 uniform float strength;
 uniform float zoom;
+`;
 
-half4 main(float2 xy) {
+/**
+ * The balloon, as if the canvas were pushed up from behind. Inside the radius the
+ * content is magnified evenly across the middle (so what is under the finger shows
+ * large and undistorted) and eases back to 1x towards the rim, where neighbouring tiles
+ * are squeezed, curved and stretched. The centre shows the area around `source` (the
+ * finger) although the bulge sits at `center` (above it), blending back to the real
+ * position at the rim. Light falls from the top-left across the dome and a soft shadow
+ * rings the outside.
+ *
+ * Each variant defines `sampleScene(p)` before this.
+ */
+const BULGE = `
+half4 bulge(float2 xy) {
   float2 d = xy - center;
   float r = length(d) / radius;
 
   if (r >= 1.0) {
-    half4 c = image.eval(xy);
+    half4 c = sampleScene(xy);
     float ring = 1.0 - smoothstep(1.0, 1.35, r);
     c.rgb *= half(1.0 - 0.32 * strength * ring);
     return c;
@@ -65,7 +73,7 @@ half4 main(float2 xy) {
   float z = mix(1.0, zoom, strength);
   float s = 1.0 - (1.0 - 1.0 / z) * w;
   float2 p = center + d * s + (source - center) * (w * strength);
-  half4 c = image.eval(p);
+  half4 c = sampleScene(p);
 
   // Shade the dome: brighter towards the top-left, darker towards the rim.
   float2 n = d / radius;
@@ -79,4 +87,35 @@ half4 main(float2 xy) {
   c.rgb += half3(0.14 * strength * exp(-dot(h, h) * 10.0));
   return c;
 }
+
+half4 main(float2 xy) { return bulge(xy); }
+`;
+
+/** Native: an image filter over the live canvas (the filtered content is `image`). */
+export const bulgeFilterEffect = lazy(`
+uniform shader image;
+${BULGE_UNIFORMS}
+half4 sampleScene(float2 p) { return image.eval(p); }
+${BULGE}
+`);
+
+/**
+ * Web: CanvasKit has no runtime-shader image filter, so the canvas is recorded as a
+ * picture and passed in as `scene` (transparent between tiles), with the dot grid drawn
+ * underneath here. The uniforms are passed as a flat array in declaration order.
+ */
+export const bulgePictureEffect = lazy(`
+uniform shader scene;
+${BULGE_UNIFORMS}
+uniform float2 origin;
+uniform float cell;
+uniform float dotRadius;
+uniform half4 dotColor;
+uniform half4 background;
+${DOTS}
+half4 sampleScene(float2 p) {
+  half4 c = scene.eval(p);
+  return c + dotsAt(p, origin, cell, dotRadius, dotColor, background) * (1.0 - c.a);
+}
+${BULGE}
 `);

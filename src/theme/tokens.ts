@@ -84,6 +84,9 @@ export const bulge = {
   zoom: 2.6,
   /** How far above the fingertip the balloon's centre sits, in radii (the finger rests near its lower edge). */
   lift: 0.35,
+  /** While holding, a finger this close to a canvas edge scrolls the canvas, up to this speed (pt/s) at the very edge. */
+  autoScrollZone: 72,
+  autoScrollSpeed: 900,
   holdMs: Platform.OS === 'web' ? 600 : 1000,
   hoverMs: 600,
 } as const;

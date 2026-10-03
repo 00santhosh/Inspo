@@ -23,9 +23,12 @@ export function useCanvasFonts() {
 const cache = new Map<string, SkImage>();
 const inflight = new Set<string>();
 
-/** Loads remote images into Skia and returns the ones that are ready, keyed by URL. */
+/**
+ * Loads remote images into Skia. Returns the ones that are ready, keyed by URL, and a
+ * version that changes whenever more arrive.
+ */
 export function useSkiaImages(urls: string[]) {
-  const [, setVersion] = useState(0);
+  const [version, setVersion] = useState(0);
   const key = urls.join('|');
 
   useEffect(() => {
@@ -59,5 +62,5 @@ export function useSkiaImages(urls: string[]) {
     };
   }, [key]);
 
-  return cache;
+  return { images: cache, version };
 }
