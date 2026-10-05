@@ -31,7 +31,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { HeldCaption } from '@/features/canvas/held-caption';
 import { hitIndex, hitTest, layoutCanvas, type TileRect } from '@/features/canvas/layout';
 import { useWheel } from '@/features/canvas/use-wheel';
-import { useCanvasFonts, useSkiaImages } from '@/features/skia/resources';
+import { imageKey, useCanvasFonts, useSkiaImages } from '@/features/skia/resources';
 import { bulgeFilterEffect, bulgePictureEffect, dotGridEffect } from '@/features/skia/shaders';
 import { SkiaTile } from '@/features/skia/skia-tile';
 import type { Item } from '@/lib/types';
@@ -77,7 +77,9 @@ function dotCell(s: number) {
 
 function imageUrlOf(item: Item) {
   if (item.kind === 'link') return item.link?.imageUrl ?? null;
-  if (item.kind === 'image' || item.kind === 'video') return item.thumbUrl ?? item.mediaUrl ?? null;
+  // A video's file is the video itself, so only its thumbnail can be drawn as a picture.
+  if (item.kind === 'video') return item.thumbUrl ?? null;
+  if (item.kind === 'image') return item.thumbUrl ?? item.mediaUrl ?? null;
   return null;
 }
 
@@ -92,9 +94,13 @@ const LIVE_FILTER = Platform.OS !== 'web';
 /** Increment resetSignal to animate back to the default view. */
 export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?: number }) {
   const [size, setSize] = useState({ width: 0, height: 0 });
+  // The layout depends on which items there are and their shapes, not their (re-signed)
+  // image links, so reloading the same items must not move the view.
+  const layoutKey = items.map((i) => `${i.id}:${i.kind}:${i.width ?? ''}x${i.height ?? ''}`).join('|');
   const layout = useMemo(
     () => (size.width ? layoutCanvas(items, size.width, size.height) : null),
-    [items, size.width, size.height],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layoutKey, size.width, size.height],
   );
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const fonts = useCanvasFonts();
@@ -166,7 +172,7 @@ export function Canvas({ items, resetSignal = 0 }: { items: Item[]; resetSignal?
           key={t.id}
           item={item}
           r={t}
-          image={url ? (images.get(url) ?? null) : null}
+          image={url ? (images.get(imageKey(url)) ?? null) : null}
           fonts={fonts}
           playing={playing && t.id === heldId && item.kind === 'video'}
         />

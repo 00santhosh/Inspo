@@ -20,8 +20,12 @@ export function useCanvasFonts() {
 }
 
 // Decoded images, shared across renders and filter changes so nothing is fetched twice.
+// Signed storage URLs carry a token that changes every time they are re-signed, so images
+// are keyed by the URL without its query string.
 const cache = new Map<string, SkImage>();
 const inflight = new Set<string>();
+
+export const imageKey = (url: string) => url.split('?')[0];
 
 /**
  * Loads remote images into Skia. Returns the ones that are ready, keyed by URL, and a
@@ -43,16 +47,17 @@ export function useSkiaImages(urls: string[]) {
       }, 60);
     };
     for (const url of new Set(key.split('|'))) {
-      if (!url || cache.has(url) || inflight.has(url)) continue;
-      inflight.add(url);
+      const id = url && imageKey(url);
+      if (!url || cache.has(id) || inflight.has(id)) continue;
+      inflight.add(id);
       Skia.Data.fromURI(url)
         .then((data) => {
           const image = Skia.Image.MakeImageFromEncoded(data);
-          if (image) cache.set(url, image);
+          if (image) cache.set(id, image);
         })
         .catch(() => {})
         .finally(() => {
-          inflight.delete(url);
+          inflight.delete(id);
           scheduleFlush();
         });
     }

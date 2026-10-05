@@ -12,6 +12,9 @@ export type Item = {
   mediaUrl?: string | null;
   /** Poster/thumbnail for images and videos. */
   thumbUrl?: string | null;
+  /** Storage paths behind the URLs above; used to delete the files. */
+  storagePath?: string | null;
+  thumbPath?: string | null;
   width?: number | null;
   height?: number | null;
   durationMs?: number | null;

@@ -12,7 +12,14 @@ export type IconName =
   | 'search'
   | 'back'
   | 'bookmark'
-  | 'sparkle';
+  | 'sparkle'
+  | 'user'
+  | 'trash'
+  | 'close'
+  | 'check'
+  | 'stop'
+  | 'play'
+  | 'pause';
 
 function paths(name: IconName, stroke: object): ReactNode {
   switch (name) {
@@ -76,6 +83,25 @@ function paths(name: IconName, stroke: object): ReactNode {
       return <Path d="M7 4h10a1 1 0 0 1 1 1v15l-6-4-6 4V5a1 1 0 0 1 1-1z" {...stroke} />;
     case 'sparkle':
       return <Path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" {...stroke} />;
+    case 'user':
+      return (
+        <>
+          <Circle cx={12} cy={8} r={4} {...stroke} />
+          <Path d="M4 20c0-4 3.6-6 8-6s8 2 8 6" {...stroke} />
+        </>
+      );
+    case 'trash':
+      return <Path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" {...stroke} />;
+    case 'close':
+      return <Path d="M6 6l12 12M18 6L6 18" {...stroke} />;
+    case 'check':
+      return <Path d="M5 12.5l4.5 4.5L19 7.5" {...stroke} />;
+    case 'stop':
+      return <Rect x={7} y={7} width={10} height={10} rx={2.5} {...stroke} />;
+    case 'play':
+      return <Path d="M8 5.5v13l11-6.5z" {...stroke} />;
+    case 'pause':
+      return <Path d="M8 5v14M16 5v14" {...stroke} />;
   }
 }
 

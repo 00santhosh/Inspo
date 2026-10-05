@@ -24,11 +24,25 @@ With no Supabase keys the app shows a demo canvas (placeholder images and sample
 
 Expo Go works for now. A development build (`npx expo run:ios|android` or `eas build --profile development`) becomes necessary once the native share extension for capturing from other apps is added.
 
+## Using the app
+
+- **Sign in:** email and password (Supabase Auth). New accounts confirm their email first; "Forgot password?" sends a reset link. Without Supabase keys, or via "Look around with demo content", the app shows sample items and nothing is saved.
+- **Add:** the blue + opens the five formats. Images (up to 10 at once; stored as JPEG, long edge 2400px, plus a thumbnail), videos (up to 5 at once, max `MAX_UPLOAD_MB` in `src/features/capture/pipeline.ts`, 50 MB by default to match Supabase's free plan), links (title, description and picture fetched by the `link-preview` Edge Function), text notes (up to 20,000 characters) and voice notes (recorded in the app, up to 10 minutes).
+- **Browse:** your items load newest-first (up to 500) onto the canvas. Image links are signed and refreshed automatically before they expire. Delete an item from its detail screen.
+
 ## Supabase
 
-1. Create a project, then copy `.env.example` to `.env.local` and fill in the URL and publishable key.
-2. Apply the schema: `npx supabase link --project-ref <ref>` then `npx supabase db push`.
-3. Deploy link previews: `npx supabase functions deploy link-preview`.
+1. Create a project, then copy `.env.example` to `.env.local` and fill in the project URL and publishable key (Project Settings > API). Set the same two variables in Vercel for the web build.
+2. Link and apply everything in this repo:
+   ```bash
+   npx supabase login
+   npx supabase link --project-ref <ref>
+   npx supabase db push                          # items table, row-level security, private media bucket
+   npx supabase config push                      # sign-in settings and redirect URLs from supabase/config.toml
+   npx supabase functions deploy link-preview    # link previews
+   ```
+3. `supabase/config.toml` turns on email confirmation, requires 8-character passwords, and allows email links to return to the Vercel site, localhost:8081 and the app's `inspocanvas://` scheme. Add your own domain there if it differs.
+4. Email links on a phone need a development build (or the `exp://` scheme in Expo Go); on web they work as-is.
 
 ## Deploy the web build
 

@@ -3,12 +3,14 @@ import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { GlassIconButton } from '@/components/glass';
-import { useItem } from '@/data/items';
+import { useToast } from '@/components/toast';
+import { useItem, useItems } from '@/data/items';
+import { confirmAsync } from '@/lib/confirm';
 import { formatDuration } from '@/lib/format';
 import type { Item } from '@/lib/types';
 import { colors, fonts, radius, shadow } from '@/theme/tokens';
@@ -16,14 +18,33 @@ import { colors, fonts, radius, shadow } from '@/theme/tokens';
 export default function ItemDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const item = useItem(id);
+  const { source, remove } = useItems();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
+  const [deleting, setDeleting] = useState(false);
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
+
+  const del = async () => {
+    if (!item || deleting) return;
+    const sure = await confirmAsync('Delete this item?', 'It will be removed from your canvas for good.');
+    if (!sure) return;
+    setDeleting(true);
+    const failure = await remove(item);
+    setDeleting(false);
+    if (failure) {
+      toast.show(`Couldn’t delete: ${failure}`, { kind: 'error' });
+      return;
+    }
+    close();
+    toast.show('Deleted', { kind: 'success' });
+  };
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 }]}>
       <View style={styles.bar}>
         <GlassIconButton icon="back" label="Back to canvas" onPress={close} />
+        {item && source === 'supabase' ? <GlassIconButton icon="trash" label="Delete" onPress={del} /> : null}
       </View>
       {item ? <Body item={item} /> : <Text style={styles.missing}>This item isn’t on your canvas any more.</Text>}
     </View>
@@ -99,7 +120,7 @@ function DetailVoice({ item }: { item: Item }) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas, paddingHorizontal: 16, gap: 12 },
-  bar: { flexDirection: 'row', justifyContent: 'flex-start' },
+  bar: { flexDirection: 'row', justifyContent: 'space-between' },
   media: { flex: 1, borderRadius: radius.card, overflow: 'hidden' },
   card: {
     borderRadius: radius.card,
