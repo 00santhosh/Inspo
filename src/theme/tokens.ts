@@ -64,8 +64,8 @@ export const fonts = Platform.select({
 });
 
 export const canvas = {
-  gap: 10,
-  padding: 16,
+  gap: 3,
+  padding: 12,
   dotSpacing: 18,
   dotRadius: 1,
   // Target tile width; on a ~390pt phone this gives 4 columns and ~30 tiles in view.

@@ -116,17 +116,44 @@ export function useCapture() {
     await saveMany(picked.assets, 'video', (asset) => (id, track) => build(asset, id, track));
   }, [userId, needSignIn, saveMany]);
 
+  /** Saves images and videos dropped onto the page (desktop web). */
+  const addDropped = useCallback(
+    async (assets: ImagePicker.ImagePickerAsset[], skipped: number) => {
+      if (!userId) return needSignIn();
+      const images = assets.filter((a) => a.type === 'image').slice(0, MAX_IMAGES_AT_ONCE);
+      const videos = assets.filter((a) => a.type === 'video').slice(0, MAX_VIDEOS_AT_ONCE);
+      const ignored = skipped + assets.length - images.length - videos.length;
+      if (!images.length && !videos.length) {
+        toast.show('Drop images or videos to add them.', { kind: 'info' });
+        return;
+      }
+      if (images.length) {
+        const build = imageBuilder(userId);
+        await saveMany(images, 'image', (asset) => (id, track) => build(asset, id, track));
+      }
+      if (videos.length) {
+        const build = videoBuilder(userId);
+        await saveMany(videos, 'video', (asset) => (id, track) => build(asset, id, track));
+      }
+      if (ignored > 0) {
+        toast.show(`${ignored} file${ignored === 1 ? ' was' : 's were'} skipped. Only images and videos can be dropped, up to ${MAX_IMAGES_AT_ONCE} images and ${MAX_VIDEOS_AT_ONCE} videos at a time.`, { kind: 'info' });
+      }
+    },
+    [userId, needSignIn, saveMany, toast],
+  );
+
   return useMemo(
     () => ({
       signedIn: !!userId,
       needSignIn,
       addImages,
       addVideos,
+      addDropped,
       saveLink: (url: string) => saveOne(linkBuilder(url), 'Link saved'),
       saveNote: (note: { title?: string; body: string }) => saveOne(noteBuilder(note), 'Note saved'),
       saveVoice: (voice: { uri: string; durationMs: number; title?: string }) =>
         userId ? saveOne(voiceBuilder(userId, voice), 'Voice note saved') : (needSignIn(), Promise.resolve('Sign in to save your own items.')),
     }),
-    [addImages, addVideos, saveOne, userId, needSignIn],
+    [addImages, addVideos, addDropped, saveOne, userId, needSignIn],
   );
 }

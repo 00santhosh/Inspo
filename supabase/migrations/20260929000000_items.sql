@@ -41,7 +41,7 @@ create index items_search_idx on public.items using gin (search);
 create index items_tags_idx on public.items using gin (tags);
 
 create function public.touch_updated_at() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = '' as $$
 begin
   new.updated_at := now();
   return new;

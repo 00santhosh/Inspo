@@ -1,20 +1,21 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CaptureDock } from '@/components/capture-dock';
+import { DropOverlay, EmptyCanvas } from '@/components/empty-state';
 import { FilterTabs, type Filter } from '@/components/filter-tabs';
+import { PrimaryButton } from '@/components/form';
 import { GlassIconButton, GlassPill } from '@/components/glass';
 import { Icon } from '@/components/icons';
 import { SkyHeader } from '@/components/sky-header';
 import { useItems } from '@/data/items';
 import { Canvas } from '@/features/canvas/canvas';
 import { useCapture } from '@/features/capture/use-capture';
+import { useFileDrop } from '@/features/capture/use-file-drop';
 import type { ItemKind } from '@/lib/types';
 import { colors, fonts } from '@/theme/tokens';
-
-const NOUN: Record<ItemKind, string> = { image: 'images', video: 'videos', link: 'links', note: 'notes', voice: 'voice notes' };
 
 export default function CanvasScreen() {
   const insets = useSafeAreaInsets();
@@ -30,6 +31,8 @@ export default function CanvasScreen() {
     else if (kind === 'video') capture.addVideos();
     else router.push(`/add/${kind}`);
   };
+
+  const dragging = useFileDrop(capture.addDropped);
 
   const showLoading = loading && items.length === 0;
   const showEmpty = !loading && !error && visible.length === 0;
@@ -61,28 +64,21 @@ export default function CanvasScreen() {
         </View>
       ) : null}
 
-      {showEmpty ? (
-        <View style={styles.center} pointerEvents="none">
-          <Icon name={filter === 'all' ? 'sparkle' : (filter as ItemKind)} size={34} color={colors.textTertiary} />
-          <Text style={styles.emptyTitle}>{filter === 'all' ? 'Your canvas is empty' : `No ${NOUN[filter]} yet`}</Text>
-          <Text style={styles.hint}>
-            {filter === 'all'
-              ? 'Tap + to add an image, video, link, note or voice note.'
-              : 'Tap + to add one. Switch to All to see everything.'}
-          </Text>
-        </View>
-      ) : null}
+      {showEmpty ? <EmptyCanvas filter={filter} onAdd={onCapture} /> : null}
 
       {error ? (
         <View style={styles.center}>
           <Icon name="close" size={30} color="#FF8A8A" />
-          <Text style={styles.emptyTitle}>Couldn’t load your canvas</Text>
-          <Text style={styles.hint}>{error}</Text>
-          <Pressable accessibilityRole="button" onPress={refresh} style={styles.retry}>
-            <Text style={styles.retryText}>Try again</Text>
-          </Pressable>
+          <Text style={styles.emptyTitle}>We couldn’t load your canvas</Text>
+          <Text style={styles.hint}>Check your internet connection, then try again. Your saved items are safe.</Text>
+          <View style={styles.retry}>
+            <PrimaryButton label="Try again" onPress={refresh} />
+          </View>
+          <Text style={styles.errorDetail}>{error}</Text>
         </View>
       ) : null}
+
+      {dragging ? <DropOverlay /> : null}
 
       <View style={[styles.dockWrap, { bottom: insets.bottom + 14 }]}>
         <CaptureDock onCapture={onCapture} onResetView={() => setResetSignal((n) => n + 1)} />
@@ -109,8 +105,8 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontFamily: fonts.sans, fontSize: 19, fontWeight: '700', color: colors.text, textAlign: 'center' },
   hint: { fontFamily: fonts.sans, fontSize: 14.5, lineHeight: 21, color: colors.textSecondary, textAlign: 'center', maxWidth: 320 },
-  retry: { marginTop: 6, paddingHorizontal: 20, height: 42, borderRadius: 21, backgroundColor: colors.accent, justifyContent: 'center' },
-  retryText: { fontFamily: fonts.sans, fontSize: 15, fontWeight: '700', color: '#fff' },
+  retry: { width: '100%', maxWidth: 260, marginTop: 6 },
+  errorDetail: { fontFamily: fonts.sans, fontSize: 12, lineHeight: 17, color: colors.textTertiary, textAlign: 'center', maxWidth: 320, marginTop: 4 },
   // The canvas sits at zIndex 2 so its balloon can overlap the header; the dock stays on top.
   dockWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 3, pointerEvents: 'box-none' },
 });

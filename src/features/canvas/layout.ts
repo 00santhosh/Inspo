@@ -26,15 +26,8 @@ export function tileAspect(item: Item): number {
   }
 }
 
-/** Deterministic value in [-1, 1) from a string, so tiles keep their jitter across renders. */
-function jitter(id: string, salt: number): number {
-  let h = 2166136261 ^ salt;
-  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
-  return ((h >>> 0) % 2000) / 1000 - 1;
-}
-
 /**
- * Staggered masonry over a world wider than the viewport, so the canvas can be
+ * Tightly packed masonry over a world wider than the viewport, so the canvas can be
  * panned in both directions. Column count is chosen so the world's aspect ratio
  * roughly matches the viewport's.
  */
@@ -50,8 +43,8 @@ export function layoutCanvas(items: Item[], viewportWidth: number, viewportHeigh
   );
   const columns = Math.max(viewportCols, Math.ceil(idealCols));
 
-  // Offset alternate columns so rows never line up: the "scattered" look.
-  const heights = Array.from({ length: columns }, (_, c) => padding + (c % 2 ? columnWidth * 0.32 : 0));
+  // Tightly packed: every tile goes in the shortest column, flush against its neighbours.
+  const heights = Array.from({ length: columns }, () => padding);
   const tiles: TileRect[] = [];
 
   for (const item of items) {
@@ -59,8 +52,8 @@ export function layoutCanvas(items: Item[], viewportWidth: number, viewportHeigh
     for (let c = 1; c < columns; c++) if (heights[c] < heights[col]) col = c;
     const w = columnWidth;
     const h = Math.round(columnWidth * tileAspect(item));
-    const x = padding + col * (columnWidth + gap) + jitter(item.id, 1) * 3;
-    const y = heights[col] + jitter(item.id, 2) * 4;
+    const x = padding + col * (columnWidth + gap);
+    const y = heights[col];
     tiles.push({ id: item.id, x, y, w, h });
     heights[col] += h + gap;
   }

@@ -47,6 +47,7 @@ type AuthState = {
   signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (email: string, password: string) => Promise<{ error?: string; needsConfirmation?: boolean }>;
   signOut: () => Promise<void>;
+  resendConfirmation: (email: string) => Promise<string | null>;
   sendReset: (email: string) => Promise<string | null>;
   setNewPassword: (password: string) => Promise<string | null>;
   enterDemo: () => void;
@@ -65,6 +66,7 @@ const AuthContext = createContext<AuthState>({
   signIn: noop,
   signUp: async () => ({}),
   signOut: async () => {},
+  resendConfirmation: noop,
   sendReset: noop,
   setNewPassword: noop,
   enterDemo: () => {},
@@ -153,6 +155,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { needsConfirmation: !data.session };
   }, []);
 
+  const resendConfirmation = useCallback(async (email: string) => {
+    if (!supabase) return 'The app isn’t connected to a server yet.';
+    const { error } = await supabase.auth.resend({ type: 'signup', email: email.trim(), options: { emailRedirectTo: redirectUrl() } });
+    return error ? friendlyAuthError(error) : null;
+  }, []);
+
   const signOut = useCallback(async () => {
     setLookAround(false);
     if (supabase) await supabase.auth.signOut();
@@ -184,12 +192,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signUp,
       signOut,
+      resendConfirmation,
       sendReset,
       setNewPassword,
       enterDemo: () => setLookAround(true),
       exitDemo: () => setLookAround(false),
     }),
-    [ready, session, configured, lookAround, recovery, signIn, signUp, signOut, sendReset, setNewPassword],
+    [ready, session, configured, lookAround, recovery, signIn, signUp, signOut, resendConfirmation, sendReset, setNewPassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
